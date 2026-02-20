@@ -1,26 +1,43 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "@/lib/supabase";
-import { requireSignedIn } from "@/lib/authz";
+import { requireSignedIn } from "@/app/api/_lib/authz";
+import { supabaseAdmin } from "@/app/api/_lib/supabase";
 
 export async function POST(req: Request, ctx: { params: { id: string } }) {
+  // 1) Auth (throws if not signed in)
   const user = await requireSignedIn(req as any);
-  const id = String(ctx.params.id ?? "");
+
+  // 2) params + body
+  const op_id = String(ctx.params.id ?? "");
   const body = await req.json().catch(() => ({}));
-  const marine_card_id = String(body?.marine_card_id ?? "");
-  const stars = Number(body?.stars ?? 0);
-  const comment = body?.comment ? String(body.comment).slice(0, 2000) : null;
 
-  if (!marine_card_id) return NextResponse.json({ error: "marine_card_id missing" }, { status: 400 });
-  if (!(stars >= 1 && stars <= 5)) return NextResponse.json({ error: "stars must be 1..5" }, { status: 400 });
+  const marine_id = String(body.marine_id ?? "");
+  const stars = Number(body.stars ?? 0);
 
-  const discord_id = String((gate.session as any).discordId ?? "");
-  const sb = supabaseServer();
+  if (!op_id || !marine_id) {
+    return NextResponse.json({ error: "Missing op_id or marine_id" }, { status: 400 });
+  }
+  if (!(stars >= 1 && stars <= 5)) {
+    return NextResponse.json({ error: "Stars must be 1..5" }, { status: 400 });
+  }
 
-  const { error } = await sb.from("marine_ratings").upsert(
-    { operation_id: id, marine_card_id, discord_id, stars, comment },
-    { onConflict: "operation_id,marine_card_id,discord_id" }
-  );
+  // 3) DB
+  const sb = supabaseAdmin();
+  const { error } = await sb
+    .from("marine_ratings")
+    .upsert(
+      {
+        op_id,
+        marine_id,
+        stars,
+        rated_by_discord_id: user.discordId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "op_id,marine_id,rated_by_discord_id" }
+    );
 
-  if (error) return NextResponse.json({ error: "DB error", details: error.message }, { status: 500 });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
   return NextResponse.json({ ok: true });
 }
