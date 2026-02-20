@@ -1,26 +1,21 @@
 import { createClient } from "@supabase/supabase-js";
 
 /**
- * Server-only Supabase client (uses SERVICE ROLE key).
- * IMPORTANT: Never expose SUPABASE_SERVICE_ROLE_KEY to the browser.
+ * DROP-IN helper for your existing API routes that import:
+ *   ../../../../_lib/supabase
+ *
+ * This file is safe to BUILD even if env vars are missing.
+ * (At runtime you still need the real env vars on Vercel.)
+ *
+ * Required on Vercel:
+ * - SUPABASE_URL
+ * - SUPABASE_SERVICE_ROLE_KEY
  */
-export function supabaseServer() {
-  const url = process.env.SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url) throw new Error("Missing SUPABASE_URL");
-  if (!serviceKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+const SUPABASE_URL = process.env.SUPABASE_URL ?? "http://localhost:54321";
+const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "dev-dummy-service-role-key";
 
-  return createClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
-
-/**
- * Helper: public URL for a file in a public bucket.
- */
-export function publicUrl(bucket: string, path: string) {
-  const url = process.env.SUPABASE_URL;
-  if (!url) throw new Error("Missing SUPABASE_URL");
-  return `${url.replace(/\/$/, "")}/storage/v1/object/public/${bucket}/${path}`;
-}
+// Server-side admin client (Service Role)
+export const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
+  auth: { persistSession: false },
+});
