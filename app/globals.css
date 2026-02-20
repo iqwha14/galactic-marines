@@ -1,0 +1,139 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 70% 10%, rgba(68,24,38,0.20), transparent 60%),
+    radial-gradient(900px 450px at 15% 30%, rgba(84,120,255,0.10), transparent 65%),
+    linear-gradient(180deg, #05070C 0%, #070A0F 35%, #05070C 100%);
+  color: #D6E2FF;
+}
+
+.hud-grid {
+  background-image:
+    linear-gradient(to right, rgba(27,36,64,.35) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(27,36,64,.25) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+@keyframes scan {
+  0% { transform: translateY(-40%); opacity: 0; }
+  20% { opacity: .25; }
+  60% { opacity: .18; }
+  100% { transform: translateY(140%); opacity: 0; }
+}
+
+.scanline::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 160px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(68,24,38,.22),
+    transparent
+  );
+  animation: scan 6s linear infinite;
+  pointer-events: none;
+}
+
+.badge {
+  border: 1px solid rgba(27,36,64,.9);
+  background: rgba(11,16,32,.65);
+}
+
+.hud-input {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(27,36,64,.7);
+  background: rgba(0,0,0,.3);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  outline: none;
+  color: #D6E2FF;
+}
+
+.hud-input:focus {
+  border-color: #441826;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(27,36,64,.7);
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-accent {
+  border: 1px solid #441826;
+  background-color: rgba(68,24,38,0.10);
+  color: #D6E2FF;
+}
+
+.btn-accent:hover {
+  background-color: rgba(68,24,38,0.18);
+}
+
+.btn-ghost {
+  border: 1px solid rgba(27,36,64,.7);
+  background-color: rgba(0,0,0,.2);
+  color: #D6E2FF;
+}
+
+.btn-ghost:hover {
+  background-color: rgba(255,255,255,.05);
+}
+
+/* ===== DROPDOWN FIX ===== */
+
+select,
+.hud-input {
+  background-color: #0f141a !important;
+  color: #ffffff !important;
+  border: 1px solid #441826 !important;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+/* Hover */
+select:hover,
+.hud-input:hover {
+  border-color: #6a2336 !important;
+  box-shadow: 0 0 0 2px rgba(68, 24, 38, 0.35);
+}
+
+/* Focus */
+select:focus,
+.hud-input:focus {
+  outline: none;
+  border-color: #8b2e47 !important;
+  box-shadow: 0 0 0 2px rgba(68, 24, 38, 0.55);
+}
+
+/* Dropdown options */
+select option {
+  background-color: #0f141a;
+  color: #ffffff;
+}
+
+/* Selected option */
+select option:checked {
+  background-color: #441826;
+  color: #ffffff;
+}
