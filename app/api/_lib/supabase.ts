@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 /**
  * This file exists ONLY to satisfy imports like:
  *   import { supabaseAdmin } from "../../../../_lib/supabase";
- * from files under app/api/**/route.ts
+ * from files under app/api/.../route.ts
  *
  * Vercel env vars required at runtime:
  * - SUPABASE_URL
