@@ -1,48 +1,79 @@
-import { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { NextRequest } from "next/server";
+import { cookies, headers } from "next/headers";
 
-/**
- * Root lib auth helpers (NextAuth).
- *
- * Requires env var:
- * - NEXTAUTH_SECRET
- *
- * Optional allowlists (comma-separated Discord IDs):
- * - EDITOR_DISCORD_IDS
- * - UO_DISCORD_IDS
- *
- * If allowlist is missing/empty => any signed-in user is allowed.
- */
+export type GateSession = {
+  discordId: string;
+  isEditor: boolean;
+  canSeeUO: boolean;
+  name?: string;
+};
 
-function parseCsv(name: string): Set<string> {
-  const raw = process.env[name] ?? "";
-  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+export type GateResult = {
+  ok: boolean;
+  status: number;
+  error?: string;
+  session?: GateSession;
+};
+
+function parseAllowlist(envName: string): Set<string> {
+  const raw = process.env[envName] ?? "";
+  return new Set(
+    raw
+      .split(/[,\n\s]+/g)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
 }
 
-const EDITORS = parseCsv("EDITOR_DISCORD_IDS");
-const UO = parseCsv("UO_DISCORD_IDS");
+const EDITORS = parseAllowlist("GM_EDITORS");
+const UO_VIEWERS = parseAllowlist("GM_UO_VIEWERS");
 
-async function getDiscordId(req: NextRequest): Promise<string | null> {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
-  if (!token) return null;
-  const t: any = token as any;
-  return (t.discordId || t.providerAccountId || t.sub || t.id || null) as string | null;
+function makeNextRequestFromContext(): NextRequest {
+  const h = new Headers(headers());
+  const cookieStr = cookies()
+    .getAll()
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
+  if (cookieStr) h.set("cookie", cookieStr);
+  return new NextRequest(process.env.NEXTAUTH_URL || "http://localhost", { headers: h });
 }
 
-export async function requireSignedIn(req: NextRequest) {
-  const discordId = await getDiscordId(req);
-  if (!discordId) throw new Error("Not signed in");
-  return { discordId };
+async function getGate(req?: Request): Promise<GateResult> {
+  try {
+    const nextReq = (req ? (req as any) : makeNextRequestFromContext()) as NextRequest;
+    const token = await getToken({ req: nextReq, secret: process.env.NEXTAUTH_SECRET });
+    const discordId = String((token as any)?.discordId ?? (token as any)?.sub ?? "");
+    if (!discordId) return { ok: false, status: 401, error: "Not signed in" };
+
+    const isEditor = EDITORS.size ? EDITORS.has(discordId) : false;
+    const canSeeUO = UO_VIEWERS.size ? UO_VIEWERS.has(discordId) || isEditor : isEditor;
+    const name = String((token as any)?.name ?? "");
+
+    return {
+      ok: true,
+      status: 200,
+      session: { discordId, isEditor, canSeeUO, name: name || undefined },
+    };
+  } catch (e: any) {
+    return { ok: false, status: 500, error: e?.message || "Auth error" };
+  }
 }
 
-export async function requireEditor(req: NextRequest) {
-  const { discordId } = await requireSignedIn(req);
-  if (EDITORS.size > 0 && !EDITORS.has(String(discordId))) throw new Error("Editor access denied");
-  return { discordId };
+export async function requireSignedIn(req?: Request): Promise<GateResult> {
+  return getGate(req);
 }
 
-export async function requireUO(req: NextRequest) {
-  const { discordId } = await requireSignedIn(req);
-  if (UO.size > 0 && !UO.has(String(discordId))) throw new Error("UO access denied");
-  return { discordId };
+export async function requireEditor(req?: Request): Promise<GateResult> {
+  const gate = await getGate(req);
+  if (!gate.ok) return gate;
+  if (!gate.session?.isEditor) return { ok: false, status: 403, error: "Editor access denied" };
+  return gate;
+}
+
+export async function requireUO(req?: Request): Promise<GateResult> {
+  const gate = await getGate(req);
+  if (!gate.ok) return gate;
+  if (!gate.session?.canSeeUO) return { ok: false, status: 403, error: "UO access denied" };
+  return gate;
 }

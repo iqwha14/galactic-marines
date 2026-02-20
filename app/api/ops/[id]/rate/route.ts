@@ -21,7 +21,7 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     .upsert(
       {
         op_id: opId,
-        discord_id: gate.discordId,
+        discord_id: gate.session!.discordId,
         stars,
         updated_at: new Date().toISOString(),
       },

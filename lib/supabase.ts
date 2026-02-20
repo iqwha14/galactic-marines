@@ -24,8 +24,10 @@ export function supabaseAdmin(): SupabaseClient {
   });
 }
 
-// Back-compat name used by some route files
-export const supabaseServer = supabaseAdmin;
+// Back-compat name used by some route files (keep it callable)
+export function supabaseServer(): SupabaseClient {
+  return supabaseAdmin();
+}
 
 export function publicUrl(bucket: string, path: string): string {
   const url = must("SUPABASE_URL").replace(/\/$/, "");
