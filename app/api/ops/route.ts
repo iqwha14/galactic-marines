@@ -26,8 +26,19 @@ export async function POST(req: Request) {
 
   const title = String(body?.title ?? "").trim();
   const planet = String(body?.planet ?? "").trim();
-  const start_at = String(body?.start_at ?? "").trim();
-  const end_at = body?.end_at ? String(body.end_at).trim() : null;
+  // Supabase/PostgREST expects RFC3339 for timestamptz. Users often send
+  // values from <input type="datetime-local"> like "YYYY-MM-DDTHH:MM".
+  // Normalize to a proper ISO string with timezone.
+  const normalizeTz = (v: any): string => {
+    const s = String(v ?? "").trim();
+    if (!s) return "";
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+    return s;
+  };
+
+  const start_at = normalizeTz(body?.start_at);
+  const end_at = body?.end_at ? normalizeTz(body.end_at) : null;
   const units = Array.isArray(body?.units) ? body.units.map((x: any) => String(x)) : [];
   const outcome = String(body?.outcome ?? "Unklar");
   const summary = String(body?.summary ?? "");

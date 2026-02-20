@@ -44,6 +44,16 @@ function fmtDT(iso: string) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("de-DE");
 }
 
+function toRfc3339(input: string) {
+  // Convert values from <input type="datetime-local"> (YYYY-MM-DDTHH:MM)
+  // into RFC3339/ISO for Supabase timestamptz.
+  const s = String(input ?? "").trim();
+  if (!s) return "";
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString();
+  return s;
+}
+
 /** Commander oben, Private unten. Major über Captain. (muss zum Trello-Parser passen) */
 const rankOrder = [
   "commander",
@@ -184,7 +194,7 @@ export default function OpsPanel() {
         body: JSON.stringify({
           title: newTitle,
           planet: newPlanet,
-          start_at: newStart,
+          start_at: toRfc3339(newStart),
           units: newUnits,
           outcome: newOutcome,
           summary: newSummary,
@@ -353,8 +363,8 @@ export default function OpsPanel() {
         body: JSON.stringify({
           title: editTitle,
           planet: editPlanet,
-          start_at: editStart,
-          end_at: editEnd || null,
+          start_at: toRfc3339(editStart),
+          end_at: editEnd ? toRfc3339(editEnd) : null,
           units: editUnits,
           outcome: editOutcome,
           summary: editSummary,

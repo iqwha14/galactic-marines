@@ -39,10 +39,23 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
   const id = String(ctx.params.id ?? "");
   const body = await req.json().catch(() => ({}));
 
+  const normalizeTz = (v: any): string => {
+    const s = String(v ?? "").trim();
+    if (!s) return "";
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+    return s;
+  };
+
   const patch: any = {};
   const allow = ["title", "planet", "start_at", "end_at", "units", "outcome", "summary", "image_url"];
   for (const k of allow) {
-    if (k in body) patch[k] = body[k];
+    if (!(k in body)) continue;
+    if (k === "start_at" || k === "end_at") {
+      patch[k] = body[k] ? normalizeTz(body[k]) : null;
+    } else {
+      patch[k] = body[k];
+    }
   }
 
   const participants = Array.isArray(body?.participants) ? body.participants : null;
