@@ -44,10 +44,35 @@ function fmtDT(iso: string) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("de-DE");
 }
 
+/** Commander oben, Private unten. Major über Captain. (muss zum Trello-Parser passen) */
+const rankOrder = [
+  "commander",
+  "major",
+  "captain",
+  "first lieutenant",
+  "lieutenant",
+  "sergeant major",
+  "staff sergeant",
+  "sergeant",
+  "corporal",
+  "lance corporal",
+  "private first class",
+  "private rekrut",
+];
+const norm = (s: string) => (s ?? "").trim().toLowerCase();
+function rankIndex(rankName: string): number {
+  const r = norm(rankName);
+  for (let i = 0; i < rankOrder.length; i++) if (r.includes(rankOrder[i])) return i;
+  if (r.includes("private") || r.includes("rekrut")) return 10_000;
+  return 5_000;
+}
+
 export default function OpsPanel() {
   const { data: session } = useSession();
   const discordId = (session as any)?.discordId as string | undefined;
   const canEdit = !!(session as any)?.isEditor;
+
+  const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
   const [roster, setRoster] = useState<Marine[]>([]);
   const [ops, setOps] = useState<Operation[]>([]);
@@ -55,7 +80,20 @@ export default function OpsPanel() {
   const [detail, setDetail] = useState<{ participants: Participant[]; reports: Report[]; ratings: any[]; marineRatings: any[] } | null>(null);
 
   const [err, setErr] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editPlanet, setEditPlanet] = useState("");
+  const [editStart, setEditStart] = useState("");
+  const [editEnd, setEditEnd] = useState<string>("");
+  const [editOutcome, setEditOutcome] = useState("Unklar");
+  const [editUnits, setEditUnits] = useState<string[]>([]);
+  const [editSummary, setEditSummary] = useState("");
+  const [editLead, setEditLead] = useState("");
+  const [editMembers, setEditMembers] = useState<string[]>([]);
+  const [editMemberPick, setEditMemberPick] = useState<string>("");
 
   const [newTitle, setNewTitle] = useState("");
   const [newPlanet, setNewPlanet] = useState("");
@@ -65,6 +103,7 @@ export default function OpsPanel() {
   const [newSummary, setNewSummary] = useState("");
   const [newLead, setNewLead] = useState("");
   const [newMembers, setNewMembers] = useState<string[]>([]);
+  const [memberPick, setMemberPick] = useState<string>("");
 
   const [opStars, setOpStars] = useState(0);
   const [opComment, setOpComment] = useState("");
@@ -94,8 +133,11 @@ export default function OpsPanel() {
 
   useEffect(() => {
     setErr(null);
-    Promise.all([loadRoster(), loadOps()]).catch((e: any) => setErr(String(e?.message ?? e)));
-  }, []);
+    // Einsätze dürfen alle ansehen. Roster ist ebenfalls öffentlich (Trello GET) – damit auch Gäste Namen/Ränge sehen.
+    const jobs: Promise<any>[] = [loadOps(), loadRoster()];
+    Promise.all(jobs).catch((e: any) => setErr(String(e?.message ?? e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discordId]);
 
   useEffect(() => {
     if (!selected) return;
@@ -103,6 +145,17 @@ export default function OpsPanel() {
   }, [selected?.id]);
 
   const rosterById = useMemo(() => new Map(roster.map((m) => [m.id, m])), [roster]);
+
+  const rosterSortedByRank = useMemo(() => {
+    const copy = [...roster];
+    copy.sort((a, b) => {
+      const ai = rankIndex(a.rank);
+      const bi = rankIndex(b.rank);
+      if (ai !== bi) return ai - bi;
+      return a.name.localeCompare(b.name, "de");
+    });
+    return copy;
+  }, [roster]);
 
   const avgOp = useMemo(() => {
     const r = detail?.ratings ?? [];
@@ -112,6 +165,7 @@ export default function OpsPanel() {
 
   async function createOp() {
     setErr(null);
+    setNotice(null);
     setBusy(true);
     try {
       const participants = [
@@ -148,8 +202,14 @@ export default function OpsPanel() {
       setNewSummary("");
       setNewLead("");
       setNewMembers([]);
+      setMemberPick("");
       await loadOps();
       setSelected(j.operation);
+      setNotice("✅ Einsatz wurde erfolgreich angelegt.");
+      setToast({ kind: "ok", msg: "Einsatz erfolgreich angelegt." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
     } finally {
       setBusy(false);
     }
@@ -167,6 +227,10 @@ export default function OpsPanel() {
       if (!res.ok) throw new Error(j?.error || j?.details || "Upload failed");
       await loadOps();
       await loadDetail(selected.id);
+      setToast({ kind: "ok", msg: "Bild erfolgreich hochgeladen." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
     } finally {
       setBusy(false);
     }
@@ -186,6 +250,10 @@ export default function OpsPanel() {
       if (!res.ok) throw new Error(j?.error || j?.details || "Rating failed");
       setOpComment("");
       await loadDetail(selected.id);
+      setToast({ kind: "ok", msg: "Bewertung gespeichert." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
     } finally {
       setBusy(false);
     }
@@ -204,6 +272,10 @@ export default function OpsPanel() {
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || j?.details || "Marine rating failed");
       await loadDetail(selected.id);
+      setToast({ kind: "ok", msg: "Soldatenbewertung gespeichert." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
     } finally {
       setBusy(false);
     }
@@ -224,17 +296,135 @@ export default function OpsPanel() {
       setRepTitle("");
       setRepBody("");
       await loadDetail(selected.id);
+      setToast({ kind: "ok", msg: "Bericht gespeichert." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
     } finally {
       setBusy(false);
     }
   }
 
-  if (!discordId) {
-    return <div className="rounded-2xl border border-hud-line/70 bg-black/20 p-4 text-hud-muted">Bitte zuerst mit Discord einloggen, um Einsätze zu sehen.</div>;
+  function openEdit() {
+    if (!selected) return;
+    setEditOpen(true);
+    setEditTitle(selected.title ?? "");
+    setEditPlanet(selected.planet ?? "");
+    // datetime-local needs "YYYY-MM-DDTHH:mm"
+    const start = selected.start_at ? new Date(selected.start_at) : null;
+    const end = selected.end_at ? new Date(selected.end_at) : null;
+    const fmtLocal = (d: Date | null) => {
+      if (!d || Number.isNaN(d.getTime())) return "";
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    setEditStart(fmtLocal(start));
+    setEditEnd(fmtLocal(end));
+    setEditOutcome(selected.outcome ?? "Unklar");
+    setEditUnits(Array.isArray(selected.units) ? selected.units : []);
+    setEditSummary(selected.summary ?? "");
+
+    const parts = detail?.participants ?? [];
+    const lead = parts.find((p) => p.is_lead)?.marine_card_id ?? "";
+    const members = parts.filter((p) => !p.is_lead).map((p) => p.marine_card_id);
+    setEditLead(lead);
+    setEditMembers(members);
+    setEditMemberPick("");
   }
 
+  async function saveEdit() {
+    if (!selected) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const participants = [
+        ...editMembers.map((id) => ({ marine_card_id: id, role: null, is_lead: false })),
+        ...(editLead ? [{ marine_card_id: editLead, role: "Einsatzleitung", is_lead: true }] : []),
+      ].reduce((acc: any[], p: any) => {
+        if (!p.marine_card_id) return acc;
+        if (acc.some((x) => x.marine_card_id === p.marine_card_id)) return acc;
+        acc.push(p);
+        return acc;
+      }, []);
+
+      const res = await fetch(`/api/ops/${selected.id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: editTitle,
+          planet: editPlanet,
+          start_at: editStart,
+          end_at: editEnd || null,
+          units: editUnits,
+          outcome: editOutcome,
+          summary: editSummary,
+          participants,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || j?.details || "Update failed");
+
+      await loadOps();
+      setSelected(j.operation);
+      await loadDetail(selected.id);
+      setEditOpen(false);
+      setToast({ kind: "ok", msg: "Einsatz aktualisiert." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteOp() {
+    if (!selected) return;
+    if (!confirm(`Einsatz wirklich löschen?\n\n${selected.title}`)) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/ops/${selected.id}`, { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || j?.details || "Delete failed");
+      setSelected(null);
+      setDetail(null);
+      await loadOps();
+      setToast({ kind: "ok", msg: "Einsatz gelöscht." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+    <div className="relative grid gap-6 lg:grid-cols-[360px_1fr]">
+      {toast ? (
+        <div
+          className={[
+            "pointer-events-none absolute right-0 top-0 z-20 w-full max-w-[520px]",
+            "rounded-2xl border px-4 py-3 text-sm shadow-lg",
+            toast.kind === "ok" ? "border-marine-500/40 bg-marine-950/30" : "border-red-500/40 bg-red-950/30",
+          ].join(" ")}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="pointer-events-auto">
+              <div className={toast.kind === "ok" ? "text-marine-200" : "text-red-200"}>{toast.kind === "ok" ? "✅" : "❌"} {toast.msg}</div>
+            </div>
+            <button type="button" className="btn btn-ghost pointer-events-auto" onClick={() => setToast(null)}>
+              ✕
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="rounded-2xl border border-hud-line/70 bg-black/20 p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Einsätze</div>
@@ -267,7 +457,7 @@ export default function OpsPanel() {
         <div className="mt-6">
           <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Neuer Einsatz</div>
           {!canEdit ? (
-            <div className="mt-2 text-sm text-hud-muted">Nur Editor kann Einsätze anlegen.</div>
+            <div className="mt-2 text-sm text-hud-muted">Nur Editor kann Einsätze anlegen/bearbeiten/löschen. Ansehen darf jeder.</div>
           ) : (
             <div className="mt-3 grid gap-2">
               <input className="hud-input" placeholder="Titel" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
@@ -303,7 +493,7 @@ export default function OpsPanel() {
               <label className="text-xs text-hud-muted">Einsatzleitung</label>
               <select className="hud-input" value={newLead} onChange={(e) => setNewLead(e.target.value)}>
                 <option value="">—</option>
-                {roster.map((m) => (
+                {rosterSortedByRank.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.rank} • {m.name}
                   </option>
@@ -311,23 +501,66 @@ export default function OpsPanel() {
               </select>
 
               <label className="text-xs text-hud-muted">Teilnehmer</label>
-              <select
-                className="hud-input"
-                multiple
-                value={newMembers}
-                onChange={(e) => setNewMembers(Array.from(e.target.selectedOptions).map((o) => o.value))}
-                size={6}
-              >
-                {roster.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.rank} • {m.name}
-                  </option>
-                ))}
-              </select>
+              <div className="grid gap-2">
+                <div className="flex gap-2">
+                  <select className="hud-input" value={memberPick} onChange={(e) => setMemberPick(e.target.value)}>
+                    <option value="">— auswählen —</option>
+                    {rosterSortedByRank
+                      .filter((m) => m.id !== newLead)
+                      .filter((m) => !newMembers.includes(m.id))
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.rank} • {m.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={busy || !memberPick}
+                    onClick={() => {
+                      if (!memberPick) return;
+                      setNewMembers((prev) => (prev.includes(memberPick) ? prev : [...prev, memberPick]));
+                      setMemberPick("");
+                    }}
+                  >
+                    Hinzufügen
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {newMembers.length ? (
+                    newMembers.map((id) => {
+                      const m = rosterById.get(id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          className="badge px-3 py-1 rounded-full border text-xs border-hud-line/70 bg-black/20 hover:bg-white/5"
+                          title="Entfernen"
+                          onClick={() => setNewMembers((prev) => prev.filter((x) => x !== id))}
+                        >
+                          {m ? `${m.rank} • ${m.name}` : id} ✕
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="text-xs text-hud-muted">Noch keine Teilnehmer ausgewählt.</div>
+                  )}
+                </div>
+              </div>
 
               <button className="btn btn-accent" onClick={createOp} disabled={busy || !newTitle || !newPlanet || !newStart}>
                 Einsatz anlegen
               </button>
+
+              {notice ? <div className="mt-2 rounded-xl border border-marine-500/40 bg-marine-950/20 p-3 text-sm">{notice}</div> : null}
+              {err ? (
+                <div className="mt-2 rounded-xl border border-red-500/40 bg-red-950/20 p-3 text-sm">
+                  <div className="font-medium text-red-200">Fehler</div>
+                  <div className="mt-1 text-hud-muted whitespace-pre-wrap">{err}</div>
+                </div>
+              ) : null}
             </div>
           )}
         </div>
@@ -349,20 +582,146 @@ export default function OpsPanel() {
               </div>
 
               {canEdit ? (
-                <label className="btn btn-ghost cursor-pointer">
-                  Bild hochladen
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) uploadImage(f);
-                    }}
-                  />
-                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button className="btn btn-ghost" type="button" onClick={openEdit} disabled={busy}>
+                    Bearbeiten
+                  </button>
+                  <button className="btn btn-ghost" type="button" onClick={deleteOp} disabled={busy}>
+                    Löschen
+                  </button>
+                  <label className="btn btn-ghost cursor-pointer">
+                    Bild hochladen
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) uploadImage(f);
+                        // allow re-upload same file
+                        if (e.currentTarget) e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
               ) : null}
             </div>
+
+            {canEdit && editOpen ? (
+              <div className="mt-4 rounded-2xl border border-hud-line/70 bg-hud-panel/30 p-4">
+                <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Einsatz bearbeiten</div>
+                <div className="mt-3 grid gap-2">
+                  <input className="hud-input" placeholder="Titel" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+                  <input className="hud-input" placeholder="Planet / Map" value={editPlanet} onChange={(e) => setEditPlanet(e.target.value)} />
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <input className="hud-input" type="datetime-local" value={editStart} onChange={(e) => setEditStart(e.target.value)} />
+                    <input className="hud-input" type="datetime-local" value={editEnd} onChange={(e) => setEditEnd(e.target.value)} />
+                  </div>
+                  <select className="hud-input" value={editOutcome} onChange={(e) => setEditOutcome(e.target.value)}>
+                    {['Unklar', 'Sieg', 'Teilerfolg', 'Rückzug', 'Niederlage'].map((x) => (
+                      <option key={x} value={x}>
+                        {x}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label className="text-xs text-hud-muted">Einheiten</label>
+                  <div className="flex flex-wrap gap-2">
+                    {['Haupteinheit', 'Galactic Marine Elite', '44th'].map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        className={[
+                          "badge px-3 py-1 rounded-full border text-xs",
+                          editUnits.includes(u) ? "border-marine-500/60 bg-marine-500/10" : "border-hud-line/70 bg-black/20",
+                        ].join(" ")}
+                        onClick={() => setEditUnits((prev) => (prev.includes(u) ? prev.filter((x) => x !== u) : [...prev, u]))}
+                      >
+                        {u}
+                      </button>
+                    ))}
+                  </div>
+
+                  <textarea className="hud-input min-h-[90px]" placeholder="Verlauf (kurz)" value={editSummary} onChange={(e) => setEditSummary(e.target.value)} />
+
+                  <label className="text-xs text-hud-muted">Einsatzleitung</label>
+                  <select className="hud-input" value={editLead} onChange={(e) => setEditLead(e.target.value)}>
+                    <option value="">—</option>
+                    {rosterSortedByRank.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.rank} • {m.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <label className="text-xs text-hud-muted">Teilnehmer</label>
+                  <div className="grid gap-2">
+                    <div className="flex gap-2">
+                      <select className="hud-input" value={editMemberPick} onChange={(e) => setEditMemberPick(e.target.value)}>
+                        <option value="">— auswählen —</option>
+                        {rosterSortedByRank
+                          .filter((m) => m.id !== editLead)
+                          .filter((m) => !editMembers.includes(m.id))
+                          .map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.rank} • {m.name}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        disabled={busy || !editMemberPick}
+                        onClick={() => {
+                          if (!editMemberPick) return;
+                          setEditMembers((prev) => (prev.includes(editMemberPick) ? prev : [...prev, editMemberPick]));
+                          setEditMemberPick("");
+                        }}
+                      >
+                        Hinzufügen
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {editMembers.length ? (
+                        editMembers.map((id) => {
+                          const m = rosterById.get(id);
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              className="badge px-3 py-1 rounded-full border text-xs border-hud-line/70 bg-black/20 hover:bg-white/5"
+                              title="Entfernen"
+                              onClick={() => setEditMembers((prev) => prev.filter((x) => x !== id))}
+                            >
+                              {m ? `${m.rank} • ${m.name}` : id} ✕
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="text-xs text-hud-muted">Noch keine Teilnehmer ausgewählt.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button className="btn btn-accent" type="button" onClick={saveEdit} disabled={busy || !editTitle || !editPlanet || !editStart}>
+                      Speichern
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      type="button"
+                      onClick={() => {
+                        setEditOpen(false);
+                      }}
+                      disabled={busy}
+                    >
+                      Abbrechen
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {selected.image_url ? (
               <div className="mt-4 overflow-hidden rounded-2xl border border-hud-line/70">
@@ -390,7 +749,12 @@ export default function OpsPanel() {
                             <span className="font-medium">{m?.name ?? p.marine_card_id}</span>
                             {p.is_lead ? <span className="ml-2 text-xs text-marine-300/90">[Leitung]</span> : null}
                           </div>
-                          <button className="btn btn-ghost" onClick={() => rateMarine(p.marine_card_id, 5)} disabled={busy} title="5 Sterne (quick)">
+                          <button
+                            className="btn btn-ghost"
+                            onClick={() => rateMarine(p.marine_card_id, 5)}
+                            disabled={!discordId || busy}
+                            title={discordId ? "5 Sterne (quick)" : "Login erforderlich"}
+                          >
                             +★
                           </button>
                         </div>
@@ -413,12 +777,18 @@ export default function OpsPanel() {
                 <div className="mt-3 rounded-xl border border-hud-line/70 bg-hud-panel/30 p-3">
                   <div className="text-sm">Deine Bewertung</div>
                   <div className="mt-2 flex items-center gap-3">
-                    <Stars value={opStars} onChange={setOpStars} />
-                    <button className="btn btn-accent" onClick={rateOperation} disabled={busy || opStars < 1}>
+                    <Stars value={opStars} onChange={discordId ? setOpStars : undefined} />
+                    <button className="btn btn-accent" onClick={rateOperation} disabled={!discordId || busy || opStars < 1}>
                       Speichern
                     </button>
                   </div>
-                  <textarea className="hud-input mt-3 min-h-[80px]" placeholder="Kommentar (optional)" value={opComment} onChange={(e) => setOpComment(e.target.value)} />
+                  <textarea
+                    className="hud-input mt-3 min-h-[80px]"
+                    placeholder={discordId ? "Kommentar (optional)" : "Login erforderlich für Bewertungen"}
+                    value={opComment}
+                    onChange={(e) => setOpComment(e.target.value)}
+                    disabled={!discordId}
+                  />
                 </div>
               </div>
             </div>
@@ -431,7 +801,7 @@ export default function OpsPanel() {
                   <div className="text-sm">Neuer Bericht</div>
                   <input className="hud-input mt-2" placeholder="Titel" value={repTitle} onChange={(e) => setRepTitle(e.target.value)} />
                   <textarea className="hud-input mt-2 min-h-[180px]" placeholder="Bericht (Markdown/Text)" value={repBody} onChange={(e) => setRepBody(e.target.value)} />
-                  <button className="btn btn-accent mt-2" onClick={addReport} disabled={busy || !repTitle || !repBody}>
+                  <button className="btn btn-accent mt-2" onClick={addReport} disabled={!discordId || busy || !repTitle || !repBody}>
                     Bericht speichern
                   </button>
                   <div className="mt-2 text-xs text-hud-muted">Markdown geht: **fett**, *kursiv*, Listen etc.</div>
@@ -452,6 +822,13 @@ export default function OpsPanel() {
               </div>
             </div>
 
+            {!discordId ? (
+              <div className="mt-6 rounded-xl border border-hud-line/70 bg-black/10 p-4 text-sm text-hud-muted">
+                Du bist nicht eingeloggt. Du kannst alle Einsätze ansehen – aber bewerten und Berichte schreiben geht nur mit Discord-Login.
+              </div>
+            ) : null}
+
+            {/* Fehler im Detail-Bereich (z.B. Upload/Rating/Report) */}
             {err ? (
               <div className="mt-6 rounded-xl border border-red-500/40 bg-red-950/20 p-4 text-sm">
                 <div className="font-medium text-red-200">Fehler</div>

@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase";
-import { requireSignedIn, requireEditor } from "@/lib/authz";
+import { requireEditor } from "@/lib/authz";
 
 /**
  * /api/ops
- * GET: list ops (signed in)
+ * GET: list ops (public)
  * POST: create op (editor)
  */
 export async function GET() {
-  const gate = await requireSignedIn();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
-
   const sb = supabaseServer();
   const { data, error } = await sb
     .from("operations")

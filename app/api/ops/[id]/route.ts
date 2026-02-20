@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase";
-import { requireSignedIn, requireEditor } from "@/lib/authz";
+import { requireEditor } from "@/lib/authz";
 
 /**
  * /api/ops/:id
- * GET: op + participants + ratings + reports (signed in)
+ * GET: op + participants + ratings + reports (public)
  * PUT: update op + replace participants (editor)
  * DELETE: delete op (editor)
  */
 
 export async function GET(_: Request, ctx: { params: { id: string } }) {
-  const gate = await requireSignedIn();
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
-
   const id = String(ctx.params.id ?? "");
   const sb = supabaseServer();
 
