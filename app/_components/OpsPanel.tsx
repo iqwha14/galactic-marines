@@ -54,6 +54,18 @@ function toRfc3339(input: string) {
   return s;
 }
 
+function apiErrorMessage(j: any, fallback: string) {
+  // Try to surface the useful Supabase/PostgREST error bits.
+  const parts: string[] = [];
+  if (j?.error) parts.push(String(j.error));
+  if (j?.details) parts.push(String(j.details));
+  if (j?.hint) parts.push(`Hint: ${String(j.hint)}`);
+  if (j?.code) parts.push(`Code: ${String(j.code)}`);
+  if (j?.received != null) parts.push(`Received: ${JSON.stringify(j.received)}`);
+  const msg = parts.filter(Boolean).join(" — ");
+  return msg || fallback;
+}
+
 /** Commander oben, Private unten. Major über Captain. (muss zum Trello-Parser passen) */
 const rankOrder = [
   "commander",
@@ -123,21 +135,21 @@ export default function OpsPanel() {
   async function loadRoster() {
     const res = await fetch("/api/trello", { cache: "no-store" });
     const j = await res.json();
-    if (!res.ok) throw new Error(j?.error || "Roster load failed");
+          if (!res.ok) throw new Error(apiErrorMessage(j, "Roster load failed"));
     setRoster((j?.marines ?? []) as Marine[]);
   }
 
   async function loadOps() {
     const res = await fetch("/api/ops", { cache: "no-store" });
     const j = await res.json();
-    if (!res.ok) throw new Error(j?.error || "Ops load failed");
+          if (!res.ok) throw new Error(apiErrorMessage(j, "Ops load failed"));
     setOps(j.operations ?? []);
   }
 
   async function loadDetail(id: string) {
     const res = await fetch(`/api/ops/${id}`, { cache: "no-store" });
     const j = await res.json();
-    if (!res.ok) throw new Error(j?.error || "Detail load failed");
+          if (!res.ok) throw new Error(apiErrorMessage(j, "Detail load failed"));
     setDetail({ participants: j.participants ?? [], reports: j.reports ?? [], ratings: j.ratings ?? [], marineRatings: j.marineRatings ?? [] });
   }
 
@@ -177,6 +189,13 @@ export default function OpsPanel() {
     setErr(null);
     setNotice(null);
     setBusy(true);
+    if (!newTitle.trim() || !newPlanet.trim() || !newStart.trim()) {
+      const msg = "Bitte Titel, Planet und Startzeit ausfüllen.";
+      setErr(msg);
+      setToast({ kind: "err", msg });
+      setBusy(false);
+      return;
+    }
     try {
       const participants = [
         ...newMembers.map((id) => ({ marine_card_id: id, role: null, is_lead: false })),
@@ -202,7 +221,7 @@ export default function OpsPanel() {
         }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || j?.details || "Create failed");
+            if (!res.ok) throw new Error(apiErrorMessage(j, "Create failed"));
 
       setNewTitle("");
       setNewPlanet("");
@@ -234,7 +253,7 @@ export default function OpsPanel() {
       fd.append("file", file);
       const res = await fetch(`/api/ops/${selected.id}/upload`, { method: "POST", body: fd });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || j?.details || "Upload failed");
+            if (!res.ok) throw new Error(apiErrorMessage(j, "Upload failed"));
       await loadOps();
       await loadDetail(selected.id);
       setToast({ kind: "ok", msg: "Bild erfolgreich hochgeladen." });
@@ -257,7 +276,7 @@ export default function OpsPanel() {
         body: JSON.stringify({ stars: opStars, comment: opComment }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || j?.details || "Rating failed");
+            if (!res.ok) throw new Error(apiErrorMessage(j, "Rating failed"));
       setOpComment("");
       await loadDetail(selected.id);
       setToast({ kind: "ok", msg: "Bewertung gespeichert." });
@@ -280,7 +299,7 @@ export default function OpsPanel() {
         body: JSON.stringify({ marine_card_id, stars }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || j?.details || "Marine rating failed");
+            if (!res.ok) throw new Error(apiErrorMessage(j, "Marine rating failed"));
       await loadDetail(selected.id);
       setToast({ kind: "ok", msg: "Soldatenbewertung gespeichert." });
     } catch (e: any) {
@@ -302,7 +321,7 @@ export default function OpsPanel() {
         body: JSON.stringify({ title: repTitle, content_md: repBody }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || j?.details || "Report failed");
+            if (!res.ok) throw new Error(apiErrorMessage(j, "Report failed"));
       setRepTitle("");
       setRepBody("");
       await loadDetail(selected.id);
@@ -346,6 +365,13 @@ export default function OpsPanel() {
     if (!selected) return;
     setErr(null);
     setBusy(true);
+    if (!editTitle.trim() || !editPlanet.trim() || !editStart.trim()) {
+      const msg = "Bitte Titel, Planet und Startzeit ausfüllen.";
+      setErr(msg);
+      setToast({ kind: "err", msg });
+      setBusy(false);
+      return;
+    }
     try {
       const participants = [
         ...editMembers.map((id) => ({ marine_card_id: id, role: null, is_lead: false })),
@@ -372,7 +398,7 @@ export default function OpsPanel() {
         }),
       });
       const j = await res.json();
-      if (!res.ok) throw new Error(j?.error || j?.details || "Update failed");
+            if (!res.ok) throw new Error(apiErrorMessage(j, "Update failed"));
 
       await loadOps();
       setSelected(j.operation);
@@ -395,7 +421,7 @@ export default function OpsPanel() {
     try {
       const res = await fetch(`/api/ops/${selected.id}`, { method: "DELETE" });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j?.error || j?.details || "Delete failed");
+            if (!res.ok) throw new Error(apiErrorMessage(j, "Delete failed"));
       setSelected(null);
       setDetail(null);
       await loadOps();

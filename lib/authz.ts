@@ -16,18 +16,26 @@ export type GateResult = {
   session?: GateSession;
 };
 
-function parseAllowlist(envName: string): Set<string> {
-  const raw = process.env[envName] ?? "";
+function parseAllowlist(...envNames: string[]): Set<string> {
+  const all: string[] = [];
+  for (const n of envNames) {
+    const raw = process.env[n] ?? "";
+    if (raw) all.push(raw);
+  }
   return new Set(
-    raw
-      .split(/[,\n\s]+/g)
+    all
+      .join(",")
+      .split(/[\s,\n]+/g)
       .map((s) => s.trim())
       .filter(Boolean)
   );
 }
 
-const EDITORS = parseAllowlist("GM_EDITORS");
-const UO_VIEWERS = parseAllowlist("GM_UO_VIEWERS");
+// Support BOTH variants used across the project
+// - New: GM_EDITORS / GM_UO_VIEWERS
+// - Old/NextAuth: EDITOR_DISCORD_IDS / UO_DISCORD_IDS
+const EDITORS = parseAllowlist("GM_EDITORS", "EDITOR_DISCORD_IDS");
+const UO_VIEWERS = parseAllowlist("GM_UO_VIEWERS", "UO_DISCORD_IDS");
 
 function makeNextRequestFromContext(): NextRequest {
   const h = new Headers(headers());
@@ -43,11 +51,20 @@ async function getGate(req?: Request): Promise<GateResult> {
   try {
     const nextReq = (req ? (req as any) : makeNextRequestFromContext()) as NextRequest;
     const token = await getToken({ req: nextReq, secret: process.env.NEXTAUTH_SECRET });
+
     const discordId = String((token as any)?.discordId ?? (token as any)?.sub ?? "");
     if (!discordId) return { ok: false, status: 401, error: "Not signed in" };
 
-    const isEditor = EDITORS.size ? EDITORS.has(discordId) : false;
-    const canSeeUO = UO_VIEWERS.size ? UO_VIEWERS.has(discordId) || isEditor : isEditor;
+    // Prefer token flags if present (set by NextAuth callback), but fall back to allowlists.
+    const tokenIsEditor = Boolean((token as any)?.isEditor);
+    const tokenCanSeeUO = Boolean((token as any)?.canSeeUO);
+
+    const listIsEditor = EDITORS.size ? EDITORS.has(discordId) : false;
+    const isEditor = tokenIsEditor || listIsEditor;
+
+    const listCanSeeUO = UO_VIEWERS.size ? UO_VIEWERS.has(discordId) : false;
+    const canSeeUO = tokenCanSeeUO || listCanSeeUO || isEditor;
+
     const name = String((token as any)?.name ?? "");
 
     return {
