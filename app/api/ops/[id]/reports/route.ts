@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "../../../_lib/supabase";
-import { requireSignedIn } from "../../../_lib/authz";
+import { supabaseServer } from "@/lib/supabase";
+import { requireSignedIn } from "@/lib/authz";
 
 export async function GET(_: Request, ctx: { params: { id: string } }) {
   const gate = await requireSignedIn();

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabaseServer, publicUrl } from "../../../_lib/supabase";
-import { requireEditor } from "../../../_lib/authz";
+import { supabaseServer, publicUrl } from "@/lib/supabase";
+import { requireEditor } from "@/lib/authz";
 
 const BUCKET = "operation-images";
 

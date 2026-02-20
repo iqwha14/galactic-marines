@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireUO } from "../_lib/authz";
+import { requireUO } from "@/lib/authz";
 
 const DOC_ID = "1H-MjTxVkHPCrqzGwXv6UK4ys25pap0vW0UlP1JyVxfE";
 

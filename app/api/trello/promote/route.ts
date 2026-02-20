@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireEditor } from "../../_lib/authz";
+import { requireEditor } from "@/lib/authz";
 import { trelloBaseParams } from "../../_lib/trello";
 
 export async function POST(req: Request) {

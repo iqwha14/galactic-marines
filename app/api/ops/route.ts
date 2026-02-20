@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { supabaseServer } from "../_lib/supabase";
-import { requireSignedIn, requireEditor } from "../_lib/authz";
+import { supabaseServer } from "@/lib/supabase";
+import { requireSignedIn, requireEditor } from "@/lib/authz";
 
 /**
  * /api/ops
