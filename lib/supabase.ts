@@ -1,40 +1,34 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-// Minimal helper layer used by the Ops feature routes.
-//
-// Required env vars (set in Vercel):
-// - SUPABASE_URL
-// - SUPABASE_ANON_KEY
-// - SUPABASE_SERVICE_ROLE_KEY
-
-function mustEnv(name: string): string {
+/**
+ * Server-side Supabase helper.
+ *
+ * Required env vars:
+ * - SUPABASE_URL
+ * - SUPABASE_SERVICE_ROLE_KEY
+ *
+ * IMPORTANT: Never expose the service role key to the client.
+ */
+function must(name: string): string {
   const v = process.env[name];
-  if (!v) throw new Error(`${name} missing on server`);
+  if (!v) throw new Error(`Missing env var: ${name}`);
   return v;
 }
 
-export function supabaseServer(): SupabaseClient {
-  return createClient(mustEnv("SUPABASE_URL"), mustEnv("SUPABASE_ANON_KEY"), {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
-
 export function supabaseAdmin(): SupabaseClient {
-  return createClient(mustEnv("SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-    auth: { persistSession: false, autoRefreshToken: false },
+  const url = must("SUPABASE_URL");
+  const key = must("SUPABASE_SERVICE_ROLE_KEY");
+  return createClient(url, key, {
+    auth: { persistSession: false },
+    global: { fetch },
   });
 }
 
-/**
- * Build a public URL for a file in a public bucket.
- * Works even if you don't want to call storage.getPublicUrl().
- */
+// Back-compat name used by some route files
+export const supabaseServer = supabaseAdmin;
+
 export function publicUrl(bucket: string, path: string): string {
-  const base = mustEnv("SUPABASE_URL").replace(/\/$/, "");
-  const cleanBucket = bucket.replace(/^\/+|\/+$/g, "");
-  const cleanPath = path.replace(/^\/+/, "");
-  return `${base}/storage/v1/object/public/${encodeURIComponent(cleanBucket)}/${cleanPath
-    .split("/")
-    .map(encodeURIComponent)
-    .join("/")}`;
+  const url = must("SUPABASE_URL").replace(/\/$/, "");
+  const cleanPath = String(path).replace(/^\//, "");
+  return `${url}/storage/v1/object/public/${bucket}/${cleanPath}`;
 }

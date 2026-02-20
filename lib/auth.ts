@@ -1,19 +1,64 @@
-{\rtf1\ansi\ansicpg1252\cocoartf2822
-\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
-{\colortbl;\red255\green255\blue255;}
-{\*\expandedcolortbl;;}
-\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
-\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+import NextAuth, { type NextAuthOptions } from "next-auth";
+import DiscordProvider from "next-auth/providers/discord";
 
-\f0\fs24 \cf0 import \{ NextAuthOptions \} from "next-auth";\
-import DiscordProvider from "next-auth/providers/discord";\
-\
-export const authOptions: NextAuthOptions = \{\
-  providers: [\
-    DiscordProvider(\{\
-      clientId: process.env.DISCORD_CLIENT_ID!,\
-      clientSecret: process.env.DISCORD_CLIENT_SECRET!,\
-    \}),\
-  ],\
-  secret: process.env.NEXTAUTH_SECRET,\
-\};}
+/**
+ * NextAuth v4 (App Router)
+ *
+ * Required env vars:
+ * - NEXTAUTH_URL
+ * - NEXTAUTH_SECRET
+ * - DISCORD_CLIENT_ID
+ * - DISCORD_CLIENT_SECRET
+ *
+ * Optional RBAC allowlists (comma-separated Discord user IDs):
+ * - EDITOR_DISCORD_IDS   (e.g. "123,456")
+ * - UO_DISCORD_IDS       (e.g. "123,789")
+ */
+function parseIdList(v: string | undefined | null): string[] {
+  return String(v ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+const EDITOR_IDS = parseIdList(process.env.EDITOR_DISCORD_IDS);
+const UO_IDS = parseIdList(process.env.UO_DISCORD_IDS);
+
+export const authOptions: NextAuthOptions = {
+  session: { strategy: "jwt" },
+  providers: [
+    DiscordProvider({
+      clientId: process.env.DISCORD_CLIENT_ID ?? "",
+      clientSecret: process.env.DISCORD_CLIENT_SECRET ?? "",
+    }),
+  ],
+  callbacks: {
+    async jwt({ token, account, profile }) {
+      const discordId =
+        (profile as any)?.id ??
+        (token as any)?.discordId ??
+        (account as any)?.providerAccountId ??
+        null;
+
+      if (discordId) {
+        (token as any).discordId = String(discordId);
+        (token as any).isEditor = EDITOR_IDS.includes(String(discordId));
+        (token as any).canSeeUO = UO_IDS.includes(String(discordId));
+      } else {
+        (token as any).discordId = null;
+        (token as any).isEditor = false;
+        (token as any).canSeeUO = false;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      (session as any).discordId = (token as any).discordId ?? null;
+      (session as any).isEditor = !!(token as any).isEditor;
+      (session as any).canSeeUO = !!(token as any).canSeeUO;
+      return session;
+    },
+  },
+};
+
+const handler = NextAuth(authOptions);
+export { handler as GET, handler as POST };

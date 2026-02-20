@@ -9,26 +9,26 @@ export type GateResult = {
 };
 
 /**
- * Works in App Router routes.
- * Accepts an optional Request arg so existing calls like requireSignedIn(req) won't break.
+ * Require Discord sign-in.
+ * `req` is optional so routes can call `requireSignedIn()` with no args.
  */
 export async function requireSignedIn(_req?: Request): Promise<GateResult> {
   const session = await getServerSession(authOptions);
   const discordId = (session as any)?.discordId;
-  if (!discordId) return { ok: false, status: 401, error: "Not signed in" };
+  if (!discordId) return { ok: false, status: 401, error: "not signed in" };
   return { ok: true, status: 200, session };
 }
 
-export async function requireEditor(_req?: Request): Promise<GateResult> {
-  const gate = await requireSignedIn();
+export async function requireEditor(req?: Request): Promise<GateResult> {
+  const gate = await requireSignedIn(req);
   if (!gate.ok) return gate;
-  if (!(gate.session as any)?.isEditor) return { ok: false, status: 403, error: "Editor access denied" };
+  if (!(gate.session as any)?.isEditor) return { ok: false, status: 403, error: "editor access denied", session: gate.session };
   return gate;
 }
 
-export async function requireUO(_req?: Request): Promise<GateResult> {
-  const gate = await requireSignedIn();
+export async function requireUO(req?: Request): Promise<GateResult> {
+  const gate = await requireSignedIn(req);
   if (!gate.ok) return gate;
-  if (!(gate.session as any)?.canSeeUO) return { ok: false, status: 403, error: "UO access denied" };
+  if (!(gate.session as any)?.canSeeUO) return { ok: false, status: 403, error: "uo access denied", session: gate.session };
   return gate;
 }
