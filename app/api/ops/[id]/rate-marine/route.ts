@@ -3,9 +3,7 @@ import { supabaseServer } from "@/lib/supabase";
 import { requireSignedIn } from "@/lib/authz";
 
 export async function POST(req: Request, ctx: { params: { id: string } }) {
-  const gate = await requireSignedIn(req as any);
-  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
-
+  const user = await requireSignedIn(req as any);
   const id = String(ctx.params.id ?? "");
   const body = await req.json().catch(() => ({}));
   const marine_card_id = String(body?.marine_card_id ?? "");
