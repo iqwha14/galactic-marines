@@ -2,6 +2,25 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase";
 import { requireEditor } from "@/lib/authz";
 
+function normalizeDateTime(input: any): string | null {
+  if (input == null) return null;
+  const s = String(input).trim();
+  if (!s) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) {
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(`${s}T00:00`);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString();
+  return s;
+}
+
 /**
  * /api/ops/:id
  * GET: op + participants + ratings + reports (public)
@@ -33,30 +52,20 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
 }
 
 export async function PUT(req: Request, ctx: { params: { id: string } }) {
-  const gate = await requireEditor();
+  const gate = await requireEditor(req);
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   const id = String(ctx.params.id ?? "");
   const body = await req.json().catch(() => ({}));
 
-  const normalizeTz = (v: any): string => {
-    const s = String(v ?? "").trim();
-    if (!s) return "";
-    const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) return d.toISOString();
-    return s;
-  };
-
   const patch: any = {};
   const allow = ["title", "planet", "start_at", "end_at", "units", "outcome", "summary", "image_url"];
   for (const k of allow) {
-    if (!(k in body)) continue;
-    if (k === "start_at" || k === "end_at") {
-      patch[k] = body[k] ? normalizeTz(body[k]) : null;
-    } else {
-      patch[k] = body[k];
-    }
+    if (k in body) patch[k] = body[k];
   }
+
+  if ("start_at" in patch) patch.start_at = normalizeDateTime(patch.start_at);
+  if ("end_at" in patch) patch.end_at = normalizeDateTime(patch.end_at);
 
   const participants = Array.isArray(body?.participants) ? body.participants : null;
 
@@ -79,15 +88,16 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
 
     if (rows.length) {
       const { error: partErr } = await sb.from("operation_participants").insert(rows);
-      if (partErr) return NextResponse.json({ error: "Participants update failed", details: partErr.message }, { status: 500 });
+      if (partErr)
+        return NextResponse.json({ error: "Participants update failed", details: partErr.message }, { status: 500 });
     }
   }
 
   return NextResponse.json({ ok: true, operation: op });
 }
 
-export async function DELETE(_: Request, ctx: { params: { id: string } }) {
-  const gate = await requireEditor();
+export async function DELETE(req: Request, ctx: { params: { id: string } }) {
+  const gate = await requireEditor(req);
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   const id = String(ctx.params.id ?? "");

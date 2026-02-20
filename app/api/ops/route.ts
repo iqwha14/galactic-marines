@@ -2,6 +2,33 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase";
 import { requireEditor } from "@/lib/authz";
 
+function normalizeDateTime(input: any): string | null {
+  if (input == null) return null;
+  const s = String(input).trim();
+  if (!s) return null;
+
+  // Already RFC3339/ISO-ish
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return s;
+
+  // From <input type="datetime-local">: YYYY-MM-DDTHH:MM
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) {
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+
+  // Date-only
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(`${s}T00:00`);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+
+  // Last resort: try Date parse
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString();
+
+  return s; // Let DB reject with a clear error
+}
+
 /**
  * /api/ops
  * GET: list ops (public)
@@ -9,36 +36,22 @@ import { requireEditor } from "@/lib/authz";
  */
 export async function GET() {
   const sb = supabaseServer();
-  const { data, error } = await sb
-    .from("operations")
-    .select("*")
-    .order("start_at", { ascending: false });
+  const { data, error } = await sb.from("operations").select("*").order("start_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: "DB error", details: error.message }, { status: 500 });
   return NextResponse.json({ operations: data ?? [] });
 }
 
 export async function POST(req: Request) {
-  const gate = await requireEditor();
+  const gate = await requireEditor(req);
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   const body = await req.json().catch(() => ({}));
 
   const title = String(body?.title ?? "").trim();
   const planet = String(body?.planet ?? "").trim();
-  // Supabase/PostgREST expects RFC3339 for timestamptz. Users often send
-  // values from <input type="datetime-local"> like "YYYY-MM-DDTHH:MM".
-  // Normalize to a proper ISO string with timezone.
-  const normalizeTz = (v: any): string => {
-    const s = String(v ?? "").trim();
-    if (!s) return "";
-    const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) return d.toISOString();
-    return s;
-  };
-
-  const start_at = normalizeTz(body?.start_at);
-  const end_at = body?.end_at ? normalizeTz(body.end_at) : null;
+  const start_at = normalizeDateTime(body?.start_at);
+  const end_at = normalizeDateTime(body?.end_at);
   const units = Array.isArray(body?.units) ? body.units.map((x: any) => String(x)) : [];
   const outcome = String(body?.outcome ?? "Unklar");
   const summary = String(body?.summary ?? "");
@@ -48,7 +61,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing fields (title, planet, start_at)" }, { status: 400 });
   }
 
-  const created_by_discord_id = String((gate.session as any).discordId ?? "");
+  const created_by_discord_id = String(gate.session?.discordId ?? "");
 
   const sb = supabaseServer();
 
