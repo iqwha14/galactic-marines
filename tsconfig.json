@@ -5,6 +5,10 @@
       "dom",
       "dom.iterable",
       "es2022"
+	"baseUrl": ".",
+	"paths": {
+  	"@/*": ["./*"]
+},
     ],
     "allowJs": false,
     "skipLibCheck": true,
