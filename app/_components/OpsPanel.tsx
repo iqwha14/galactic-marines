@@ -217,8 +217,18 @@ export default function OpsPanel() {
           participants,
         }),
       });
-      const j = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(j ? [j?.error, j?.details, j?.hint, j?.code].filter(Boolean).join("\n") : await readError(res));
+      const raw = await res.text().catch(() => "");
+      let j: any = null;
+      try {
+        j = raw ? JSON.parse(raw) : null;
+      } catch {
+        j = null;
+      }
+      if (!res.ok) {
+        const msg = j ? [j?.error, j?.message, j?.details, j?.hint, j?.code].filter(Boolean).map(String).join("\n") : (raw || `${res.status} ${res.statusText}`);
+        throw new Error(msg || "Create failed");
+      }
+      if (!j) throw new Error(raw || "Create failed");
 
       setNewTitle("");
       setNewPlanet("");
@@ -391,8 +401,18 @@ export default function OpsPanel() {
           participants,
         }),
       });
-      const j = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(j ? [j?.error, j?.details, j?.hint, j?.code].filter(Boolean).join("\n") : await readError(res));
+      const raw = await res.text().catch(() => "");
+      let j: any = null;
+      try {
+        j = raw ? JSON.parse(raw) : null;
+      } catch {
+        j = null;
+      }
+      if (!res.ok) {
+        const msg = j ? [j?.error, j?.message, j?.details, j?.hint, j?.code].filter(Boolean).map(String).join("\n") : (raw || `${res.status} ${res.statusText}`);
+        throw new Error(msg || "Create failed");
+      }
+      if (!j) throw new Error(raw || "Create failed");
 
       await loadOps();
       setSelected(j.operation);
