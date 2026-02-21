@@ -231,7 +231,6 @@ export async function GET() {
     });
 
     marines.sort((a, b) => {
-      if (a.unitOrder !== b.unitOrder) return a.unitOrder - b.unitOrder;
       const ai = rankIndex(a.rank);
       const bi = rankIndex(b.rank);
       if (ai !== bi) return ai - bi;

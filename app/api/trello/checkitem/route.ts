@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireEditor } from "@/lib/authz";
+import { requireFE } from "@/lib/authz";
 import { trelloBaseParams } from "../../_lib/trello";
 
 export async function POST(req: Request) {
-  const gate = await requireEditor();
+  const gate = await requireFE();
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
   const body = await req.json().catch(() => ({}));
