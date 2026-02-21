@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requiredEnv, trelloBaseParams } from "../_lib/trello";
+import { requireEditor } from "@/lib/authz";
 
 type TrelloAction = {
   id: string;

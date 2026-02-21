@@ -14,6 +14,8 @@ function parseAllowList(envName: string): Set<string> {
 
 const EDITOR_IDS = parseAllowList("EDITOR_DISCORD_IDS");
 const UO_IDS = parseAllowList("UO_DISCORD_IDS");
+const ADMIN_IDS = parseAllowList("ADMIN_DISCORD_IDS");
+const FE_IDS = parseAllowList("FE_DISCORD_IDS");
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -29,15 +31,21 @@ export const authOptions: NextAuthOptions = {
       if (discordId) (token as any).discordId = String(discordId);
 
       const id = String((token as any).discordId ?? "");
-      (token as any).isEditor = EDITOR_IDS.has(id);
-      (token as any).canSeeUO = UO_IDS.has(id);
+      const isAdmin = ADMIN_IDS.has(id);
+      const isEditor = isAdmin || EDITOR_IDS.has(id);
+      (token as any).isAdmin = isAdmin;
+      (token as any).isEditor = isEditor;
+      (token as any).canSeeUO = isAdmin || isEditor || UO_IDS.has(id);
+      (token as any).canSeeFE = isAdmin || isEditor || FE_IDS.has(id);
 
       return token;
     },
     async session({ session, token }) {
       (session as any).discordId = (token as any).discordId ?? null;
+      (session as any).isAdmin = !!(token as any).isAdmin;
       (session as any).isEditor = !!(token as any).isEditor;
       (session as any).canSeeUO = !!(token as any).canSeeUO;
+      (session as any).canSeeFE = !!(token as any).canSeeFE;
       return session;
     },
   },

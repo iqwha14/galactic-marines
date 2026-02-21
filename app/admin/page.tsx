@@ -1,109 +1,106 @@
-"use client";
-
 import Link from "next/link";
-import { SessionProvider, useSession } from "next-auth/react";
-import AppShell from "../_components/AppShell";
+import { requireEditor, requireAdmin } from "@/lib/authz";
 
-function AdminInner() {
-  const { data: session, status } = useSession();
-  const isEditor = (session?.user as any)?.isEditor === true;
+export const dynamic = "force-dynamic";
 
+function Denied({ title, detail }: { title: string; detail: string }) {
   return (
-    <main className="relative min-h-screen overflow-hidden text-white">
-      <div className="absolute inset-0 starfield" />
-      <div className="absolute inset-0 hud-grid opacity-[0.10]" />
-      <div className="absolute inset-0 scanlines pointer-events-none" />
-
-      <div className="relative z-10 mx-auto max-w-7xl px-6 py-10">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-xs tracking-[0.28em] uppercase text-hud-muted">GM // ADMIN CONSOLE</div>
-            <h1 className="mt-2 text-3xl font-semibold tracking-wide">Verwaltung</h1>
-            <p className="mt-2 text-sm text-hud-muted">Systemfunktionen, Audit-Trail und Wartung.</p>
-          </div>
+    <main className="min-h-screen hud-grid px-6 py-10">
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-6">
           <Link href="/" className="btn btn-ghost">← Command Deck</Link>
         </div>
-
-        {status === "loading" ? (
-          <div className="mt-10 rounded-2xl border border-hud-line/70 bg-black/30 p-6 text-hud-muted">SYNC…</div>
-        ) : !session?.user ? (
-          <div className="mt-10 rounded-2xl border border-hud-line/70 bg-black/30 p-6 text-hud-muted">
-            Bitte einloggen, um fortzufahren.
-          </div>
-        ) : !isEditor ? (
-          <div className="mt-10 relative overflow-hidden rounded-2xl border border-red-500/30 bg-black/35 p-8">
-            <div className="scanline absolute inset-0" />
-            <div className="relative">
-              <div className="text-xs tracking-[0.28em] uppercase text-red-200/80">ACCESS DENIED</div>
-              <div className="mt-2 text-2xl font-semibold">Editor erforderlich</div>
-              <p className="mt-2 text-sm text-hud-muted">
-                Du darfst alle Einsätze ansehen – aber Verwaltung, Erstellen, Bearbeiten und Löschen sind nur für Editors.
-              </p>
-              <div className="mt-6 flex flex-wrap gap-2">
-                <Link className="btn btn-accent" href="/ops">Zur Einsatzzentrale</Link>
-                <Link className="btn btn-ghost" href="/members">Zur Mitgliederverwaltung</Link>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-            <section className="mt-10 grid gap-6 md:grid-cols-2">
-              <div className="tile tile-accent-amber">
-                <div className="tile-bg" />
-                <div className="tile-border" />
-                <div className="relative z-10">
-                  <div className="tile-tag">AUDIT</div>
-                  <h2 className="mt-3 text-2xl font-semibold">Logs / Audit-Trail</h2>
-                  <p className="mt-2 text-sm text-hud-muted">Board Actions, Änderungen und Nachvollziehbarkeit.</p>
-                </div>
-              </div>
-
-              <div className="tile tile-accent-violet">
-                <div className="tile-bg" />
-                <div className="tile-border" />
-                <div className="relative z-10">
-                  <div className="tile-tag">CONTROL</div>
-                  <h2 className="mt-3 text-2xl font-semibold">Feature Toggles</h2>
-                  <p className="mt-2 text-sm text-hud-muted">Sperre/entsperre Module &amp; Wartungsmodus (coming soon).</p>
-                </div>
-              </div>
-
-              <div className="tile tile-accent-cyan">
-                <div className="tile-bg" />
-                <div className="tile-border" />
-                <div className="relative z-10">
-                  <div className="tile-tag">SECURITY</div>
-                  <h2 className="mt-3 text-2xl font-semibold">Rollenverwaltung</h2>
-                  <p className="mt-2 text-sm text-hud-muted">Editor-Allowlist / UO / FE (Konfiguration über ENV).</p>
-                </div>
-              </div>
-
-              <div className="tile tile-accent-emerald">
-                <div className="tile-bg" />
-                <div className="tile-border" />
-                <div className="relative z-10">
-                  <div className="tile-tag">EXPORT</div>
-                  <h2 className="mt-3 text-2xl font-semibold">Datenexport</h2>
-                  <p className="mt-2 text-sm text-hud-muted">CSV/JSON Export (coming soon) – für Auswertung &amp; Backup.</p>
-                </div>
-              </div>
-            </section>
-
-            <div className="mt-10">
-              {/* Reuse existing dashboard logic; open directly to Logs */}
-              <AppShell defaultTab="log" />
-            </div>
-          </>
-        )}
+        <div className="rounded-2xl border border-marine-500/40 bg-marine-500/10 p-6">
+          <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">ACCESS CONTROL</div>
+          <h1 className="mt-2 text-3xl font-semibold">{title}</h1>
+          <p className="mt-2 text-hud-muted">{detail}</p>
+        </div>
       </div>
     </main>
   );
 }
 
-export default function AdminPage() {
+export default async function AdminPage() {
+  const gate = await requireEditor();
+  if (!gate.ok) {
+    return <Denied title="Zugriff verweigert" detail={gate.error ?? "Nicht eingeloggt."} />;
+  }
+
+  const adminGate = await requireAdmin();
+
   return (
-    <SessionProvider>
-      <AdminInner />
-    </SessionProvider>
+    <main className="min-h-screen hud-grid px-6 py-10">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-8 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">ADMIN / CONTROL</div>
+            <h1 className="mt-2 text-3xl font-semibold">Verwaltung</h1>
+            <p className="mt-2 text-hud-muted">
+              Logs für Editors. Rechteverwaltung nur für Admin. Weitere Module: Audit, Export, Feature Toggles, Notfallmodus.
+            </p>
+          </div>
+          <Link href="/" className="btn btn-ghost">← Command Deck</Link>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud lg:col-span-2">
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Logs</h2>
+            <div className="mt-4">
+              <a className="btn btn-accent" href="/logs">Logs öffnen</a>
+              <div className="mt-3 text-sm text-hud-muted">
+                Hinweis: Falls du keine /logs Seite hast, nutze direkt die API <code className="text-white/80">/api/log</code>.
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Rollen & Rechte</h2>
+            <p className="mt-3 text-sm text-hud-muted">
+              Rechte vergeben auch für Offline-User (Discord ID).
+            </p>
+            {adminGate.ok ? (
+              <a className="btn btn-accent mt-4" href="/admin/permissions">Permissions Console</a>
+            ) : (
+              <div className="mt-4 rounded-xl border border-marine-500/40 bg-marine-500/10 p-3 text-sm">
+                <div className="font-medium">Admin erforderlich</div>
+                <div className="mt-1 text-hud-muted">{adminGate.error}</div>
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Audit-Trail</h2>
+            <p className="mt-3 text-sm text-hud-muted">Optional: gm_audit Tabelle. Sonst wird ein Hinweis angezeigt.</p>
+            <a className="btn btn-ghost mt-4" href="/admin/audit">Audit ansehen</a>
+          </section>
+
+          <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Datenexport</h2>
+            <p className="mt-3 text-sm text-hud-muted">Exportiert Ops + Participants als JSON (Editor).</p>
+            <a className="btn btn-ghost mt-4" href="/api/admin/export" target="_blank" rel="noreferrer">Export JSON</a>
+          </section>
+
+          <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Feature Toggles</h2>
+            <p className="mt-3 text-sm text-hud-muted">Admin-only. Optional: gm_feature_flags Tabelle.</p>
+            {adminGate.ok ? (
+              <a className="btn btn-ghost mt-4" href="/admin/flags">Flags Console</a>
+            ) : (
+              <div className="mt-4 text-sm text-hud-muted">Gesperrt.</div>
+            )}
+          </section>
+
+          <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Notfallmodus</h2>
+            <p className="mt-3 text-sm text-hud-muted">Schaltet emergency_lockdown Flag (Admin).</p>
+            {adminGate.ok ? (
+              <a className="btn btn-ghost mt-4" href="/admin/emergency">Emergency Switch</a>
+            ) : (
+              <div className="mt-4 text-sm text-hud-muted">Gesperrt.</div>
+            )}
+          </section>
+        </div>
+      </div>
+    </main>
   );
 }

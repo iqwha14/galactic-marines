@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { signIn, signOut } from "next-auth/react";
+
+type SessionShape = {
+  user?: { name?: string | null; image?: string | null; isEditor?: boolean; isAdmin?: boolean };
+  discordId?: string | null;
+};
 
 type Tile = {
   title: string;
   subtitle: string;
   lines: string[];
   href: string;
-  accent: string;
   tag: string;
   locked?: boolean;
 };
@@ -17,21 +22,22 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
-export default function Home() {
-  const [isEditor, setIsEditor] = useState(false);
+export default function CommandDeck() {
+  const [sess, setSess] = useState<SessionShape | null>(null);
   const [roleLoaded, setRoleLoaded] = useState(false);
 
-  // Session sicher clientseitig laden (kein SSR Crash)
+  const isSignedIn = !!sess?.user;
+  const isEditor = !!sess?.user?.isEditor;
+  const isAdmin = !!sess?.user?.isAdmin;
+
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/auth/session", {
-          credentials: "include",
-        });
-        const json = await res.json().catch(() => null);
+        const res = await fetch("/api/auth/session", { credentials: "include" });
+        const json = (await res.json().catch(() => null)) as SessionShape | null;
         if (alive) {
-          setIsEditor(!!json?.user?.isEditor);
+          setSess(json);
           setRoleLoaded(true);
         }
       } catch {
@@ -43,7 +49,7 @@ export default function Home() {
     };
   }, []);
 
-  // Mouse Glow
+  // mouse-follow holo glow
   const glowRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -56,7 +62,7 @@ export default function Home() {
     return () => window.removeEventListener("mousemove", onMove);
   }, []);
 
-  // Starfield
+  // starfield (redline theme)
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -68,34 +74,57 @@ export default function Home() {
     let w = 0;
     let h = 0;
 
-    const stars = Array.from({ length: 180 }, () => ({
+    const stars = Array.from({ length: 190 }, () => ({
       x: Math.random(),
       y: Math.random(),
       z: Math.random(),
-      s: 0.5 + Math.random() * 1.5,
-      v: 0.2 + Math.random() * 0.6,
+      s: 0.4 + Math.random() * 1.5,
+      v: 0.14 + Math.random() * 0.6,
     }));
 
     const resize = () => {
-      w = canvas.width = window.innerWidth * devicePixelRatio;
-      h = canvas.height = window.innerHeight * devicePixelRatio;
+      w = canvas.width = Math.floor(window.innerWidth * devicePixelRatio);
+      h = canvas.height = Math.floor(window.innerHeight * devicePixelRatio);
     };
     resize();
     window.addEventListener("resize", resize);
 
     const tick = () => {
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = "rgba(255,255,255,0.8)";
+
+      const g = ctx.createRadialGradient(
+        w * 0.52,
+        h * 0.42,
+        0,
+        w * 0.5,
+        h * 0.5,
+        Math.max(w, h) * 0.65
+      );
+      g.addColorStop(0, "rgba(215,40,70,0.07)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
       for (const st of stars) {
-        st.y += st.v / 1000;
-        if (st.y > 1) st.y = 0;
+        st.y += (st.v / 900) * (h / devicePixelRatio);
+        if (st.y > 1) {
+          st.y = 0;
+          st.x = Math.random();
+          st.z = Math.random();
+          st.s = 0.4 + Math.random() * 1.5;
+          st.v = 0.14 + Math.random() * 0.6;
+        }
         const px = st.x * w;
         const py = st.y * h;
-        const r = st.s * devicePixelRatio;
+        const r = st.s * (0.6 + st.z) * devicePixelRatio;
+        ctx.globalAlpha = clamp(0.2 + st.z * 0.8, 0.2, 1);
         ctx.beginPath();
         ctx.arc(px, py, r, 0, Math.PI * 2);
         ctx.fill();
       }
+      ctx.globalAlpha = 1;
+
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -111,79 +140,118 @@ export default function Home() {
       {
         title: "Mitgliederverwaltung",
         subtitle: "PERSONNEL / ROSTER",
-        lines: ["Soldaten", "Roster", "Beförderungen", "Fortbildungen"],
+        lines: ["Soldaten", "Abmeldungen", "Adjutanten"],
         href: "/members",
-        accent: "border-cyan-500",
         tag: "ACCESS: STANDARD",
       },
       {
         title: "Dokumente",
-        subtitle: "ARCHIVE",
-        lines: ["Einheitsdokumente", "UO Dokumente", "Führungsebene"],
+        subtitle: "ARCHIVE / DOCTRINE",
+        lines: ["Einheitsdokumente", "UO Dokument", "FE Dokument"],
         href: "/documents",
-        accent: "border-purple-500",
         tag: "ACCESS: STANDARD",
       },
       {
         title: "Einsatzzentrale",
-        subtitle: "OPS COMMAND",
-        lines: ["Operationen", "Reports", "Bewertungen", "Archiv"],
+        subtitle: "OPS / COMMAND",
+        lines: ["Einsätze"],
         href: "/ops",
-        accent: "border-emerald-500",
         tag: "ACCESS: STANDARD",
       },
+      {
+        title: "Verwaltung",
+        subtitle: "ADMIN / CONTROL",
+        lines: ["Logs", "Rollen & Rechte", "Audit-Trail", "Datenexport", "Feature Toggles", "Notfallmodus"],
+        href: "/admin",
+        tag: isEditor ? (isAdmin ? "ACCESS: ADMIN" : "ACCESS: EDITOR") : "ACCESS: DENIED",
+        locked: !isEditor,
+      },
     ];
-
-    base.push({
-      title: "Verwaltung",
-      subtitle: "ADMIN CONTROL",
-      lines: ["Logs", "Rollenverwaltung", "Audit-Trail", "Datenexport"],
-      href: "/admin",
-      accent: "border-amber-500",
-      tag: isEditor ? "ACCESS: EDITOR" : "ADMIN LOCK",
-      locked: !isEditor,
-    });
-
     return base;
-  }, [isEditor]);
+  }, [isEditor, isAdmin]);
 
   return (
-    <main className="relative min-h-screen bg-black text-white overflow-hidden">
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
-      <div ref={glowRef} className="absolute inset-0 pointer-events-none" />
+    <main className="gm-bg relative min-h-screen overflow-hidden text-white">
+      <canvas ref={canvasRef} className="gm-stars absolute inset-0 h-full w-full" />
+      <div ref={glowRef} className="gm-glow absolute inset-0" />
+      <div className="gm-scanlines absolute inset-0 pointer-events-none" />
+      <div className="gm-grid absolute inset-0 pointer-events-none" />
 
-      <div className="relative z-10 max-w-6xl mx-auto px-6 py-16">
-        <h1 className="text-5xl font-bold mb-4 tracking-widest bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
-          GALACTIC MARINES
-        </h1>
-        <p className="text-gray-400 mb-12">
-          Command Interface – Zugriff auf operative Systeme
-        </p>
+      <div className="relative z-10 mx-auto max-w-6xl px-6 py-14">
+        <header className="mb-10 flex flex-col gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="gm-kicker">COMMAND DECK</div>
+              <h1 className="gm-title">
+                MARINE <span className="gm-title-accent">BUREAU</span>
+              </h1>
+              <p className="gm-subtitle">Zugriff auf operative Systeme. Wähle ein Modul.</p>
+            </div>
 
-        <div className="grid md:grid-cols-2 gap-8">
+            <div className="flex items-center gap-3">
+              {isSignedIn ? (
+                <>
+                  <div className="gm-chip">
+                    <div className="text-xs text-white/70">SIGNED IN</div>
+                    <div className="text-sm font-medium">{sess?.user?.name || sess?.discordId || "Discord"}</div>
+                    <div className="text-xs text-white/60">
+                      {isAdmin ? "ADMIN" : isEditor ? "EDITOR" : "STANDARD"}
+                    </div>
+                  </div>
+                  <button type="button" className="gm-btn gm-btn-ghost" onClick={() => signOut({ callbackUrl: "/" })}>
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="gm-btn gm-btn-primary" onClick={() => signIn("discord", { callbackUrl: "/" })}>
+                  Discord Login
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="gm-statusbar">
+            <span>
+              STATUS: <span className="gm-ok">ONLINE</span>
+              {!roleLoaded && <span className="ml-3 text-white/55">SYNC…</span>}
+            </span>
+            <span className="text-white/55">SECURE CHANNEL • REDLINE THEME</span>
+          </div>
+        </header>
+
+        <section className="grid gap-10 md:grid-cols-2">
           {tiles.map((t) => {
-            const card = (
-              <div
-                className={`relative p-8 rounded-2xl border ${t.accent} bg-white/5 backdrop-blur-xl transition hover:scale-105`}
-              >
-                <h2 className="text-2xl font-semibold mb-2">{t.title}</h2>
-                <p className="text-sm text-gray-400 mb-4">{t.subtitle}</p>
-                <ul className="text-sm text-gray-300 space-y-1">
-                  {t.lines.map((l) => (
-                    <li key={l}>• {l}</li>
-                  ))}
-                </ul>
-                <div className="mt-6 text-xs text-gray-500">{t.tag}</div>
+            const Card = (
+              <div className="gm-tile group">
+                <div className="gm-tile-frame" />
+                <div className="gm-tile-sweep" />
+                <div className="gm-tile-content">
+                  <div className="gm-tile-top">
+                    <div>
+                      <div className="gm-tile-sub">{t.subtitle}</div>
+                      <div className="gm-tile-title">{t.title}</div>
+                    </div>
+                    <div className="gm-tag">{t.tag}</div>
+                  </div>
+
+                  <ul className="gm-lines">
+                    {t.lines.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+
+                  <div className="gm-cta">
+                    <span className="gm-cta-label">OPEN MODULE</span>
+                    <span className="gm-cta-arrow">→</span>
+                  </div>
+                </div>
 
                 {t.locked && (
-                  <div className="absolute inset-0 bg-black/70 flex items-center justify-center rounded-2xl">
-                    <div className="text-center">
-                      <div className="text-red-400 font-bold">
-                        ZUGRIFF GESPERRT
-                      </div>
-                      <div className="text-xs text-gray-400 mt-1">
-                        Nur Editors
-                      </div>
+                  <div className="gm-lock">
+                    <div className="gm-lock-inner">
+                      <div className="gm-lock-title">ZUGRIFF GESPERRT</div>
+                      <div className="gm-lock-text">Nur Editors können dieses Modul öffnen.</div>
+                      <div className="gm-lock-chip">AUTH REQUIRED</div>
                     </div>
                   </div>
                 )}
@@ -193,22 +261,18 @@ export default function Home() {
             if (t.locked) {
               return (
                 <div key={t.title} className="cursor-not-allowed">
-                  {card}
+                  {Card}
                 </div>
               );
             }
 
             return (
-              <Link key={t.title} href={t.href}>
-                {card}
+              <Link key={t.title} href={t.href} className="block">
+                {Card}
               </Link>
             );
           })}
-        </div>
-
-        <footer className="mt-12 text-sm text-gray-500">
-          STATUS: ONLINE {roleLoaded ? "" : "• SYNC…"}
-        </footer>
+        </section>
       </div>
     </main>
   );
