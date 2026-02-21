@@ -1,192 +1,239 @@
 "use client";
 
 import Link from "next/link";
-import { SessionProvider, useSession } from "next-auth/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useSession } from "next-auth/react";
 
-function CommandDeckHomeInner() {
-  const { data: session, status } = useSession();
-  const [isEditor, setIsEditor] = useState(false);
-  const rootRef = useRef<HTMLDivElement | null>(null);
+type Tile = {
+  title: string;
+  subtitle: string;
+  lines: string[];
+  href: string;
+  accent: string;
+  tag: string;
+  locked?: boolean;
+};
 
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+export default function Home() {
+  const { data: session } = useSession();
+  const isEditor = (session?.user as any)?.isEditor === true;
+
+  // mouse-follow holo glow
+  const glowRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    setIsEditor((session?.user as any)?.isEditor === true);
-  }, [session]);
-
-  // Mouse-follow hologlow (no sound)
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
     const onMove = (e: MouseEvent) => {
-      const r = el.getBoundingClientRect();
-      const x = ((e.clientX - r.left) / r.width) * 100;
-      const y = ((e.clientY - r.top) / r.height) * 100;
-      el.style.setProperty("--mx", `${x.toFixed(2)}%`);
-      el.style.setProperty("--my", `${y.toFixed(2)}%`);
+      const x = (e.clientX / window.innerWidth) * 100;
+      const y = (e.clientY / window.innerHeight) * 100;
+      if (glowRef.current) {
+        glowRef.current.style.setProperty("--mx", `${x}%`);
+        glowRef.current.style.setProperty("--my", `${y}%`);
+      }
     };
-    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mousemove", onMove, { passive: true });
     return () => window.removeEventListener("mousemove", onMove);
   }, []);
 
-  const tiles = useMemo(() => {
-    const base = [
+  // starfield (lightweight canvas)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let raf = 0;
+    let w = 0;
+    let h = 0;
+
+    const stars = Array.from({ length: 180 }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      z: Math.random(),
+      s: 0.4 + Math.random() * 1.6,
+      v: 0.15 + Math.random() * 0.55,
+    }));
+
+    const resize = () => {
+      w = canvas.width = Math.floor(window.innerWidth * devicePixelRatio);
+      h = canvas.height = Math.floor(window.innerHeight * devicePixelRatio);
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const tick = () => {
+      ctx.clearRect(0, 0, w, h);
+
+      // subtle vignette
+      const g = ctx.createRadialGradient(w * 0.5, h * 0.45, 0, w * 0.5, h * 0.5, Math.max(w, h) * 0.65);
+      g.addColorStop(0, "rgba(0,255,255,0.06)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, h);
+
+      // stars
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      for (const st of stars) {
+        st.y += (st.v / 800) * (h / devicePixelRatio);
+        if (st.y > 1) {
+          st.y = 0;
+          st.x = Math.random();
+          st.z = Math.random();
+          st.s = 0.4 + Math.random() * 1.6;
+          st.v = 0.15 + Math.random() * 0.55;
+        }
+        const px = st.x * w;
+        const py = st.y * h;
+        const r = st.s * (0.6 + st.z) * devicePixelRatio;
+        ctx.globalAlpha = clamp(0.15 + st.z * 0.85, 0.15, 1);
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
+
+  const tiles: Tile[] = useMemo(() => {
+    const baseTiles: Tile[] = [
       {
         title: "Mitgliederverwaltung",
-        subtitle: "Soldaten • Roster • Adjutanten",
-        lines: ["Beförderungen", "Fortbildungen", "Ausbildungsstand"],
+        subtitle: "PERSONNEL / ROSTER",
+        lines: ["Soldaten & Profile", "Roster & Adjutanten", "Beförderungen", "Fortbildungen"],
         href: "/members",
         accent: "tile-accent-cyan",
-        tag: "PERSONNEL",
+        tag: "ACCESS: STANDARD",
       },
       {
         title: "Dokumente",
-        subtitle: "Einheitsdokumente • UO • Führungsebene",
-        lines: ["Einheitsdokumente (für alle)", "Unteroffizier", "FE-Dokument"],
+        subtitle: "ARCHIVE / DOCTRINE",
+        lines: ["Einheitsdokumente (alle)", "Unteroffiziersdokumente", "Führungsebene (FE-ID)"],
         href: "/documents",
         accent: "tile-accent-violet",
-        tag: "ARCHIVES",
+        tag: "ACCESS: STANDARD",
       },
       {
         title: "Einsatzzentrale",
-        subtitle: "Operationen • Reports • Bewertungen",
-        lines: ["Einsatz anlegen", "Auswertung", "Einsatzarchiv"],
+        subtitle: "OPS / COMMAND",
+        lines: ["Einsätze anlegen & verwalten", "Reports & Lagebilder", "Bewertungen", "Archiv"],
         href: "/ops",
         accent: "tile-accent-emerald",
-        tag: "OPS",
+        tag: "ACCESS: STANDARD",
       },
     ];
 
-    if (isEditor) {
-      base.push({
-        title: "Verwaltung",
-        subtitle: "Editor-Zugriff • Systemkontrolle",
-        lines: ["Audit-Trail", "Feature-Toggles", "Datenexport"],
-        href: "/admin",
-        accent: "tile-accent-amber",
-        tag: "ADMIN",
-      });
-    } else {
-      // Still show a locked tile for the WOW moment
-      base.push({
-        title: "Verwaltung",
-        subtitle: "Gesperrt • Editor erforderlich",
-        lines: ["Logs", "Rollen", "Systemfunktionen"],
-        href: "/admin",
-        accent: "tile-accent-amber",
-        tag: "ADMIN LOCK",
-        locked: true,
-      });
-    }
+    // always show admin tile for the wow moment (locked overlay for non-editors)
+    baseTiles.push({
+      title: "Verwaltung",
+      subtitle: "ADMIN / CONTROL",
+      lines: ["System Logs", "Rollenverwaltung", "Audit-Trail", "Datenexport", "Feature Toggles", "Notfallmodus"],
+      href: "/admin",
+      accent: "tile-accent-amber",
+      tag: isEditor ? "ACCESS: EDITOR" : "ADMIN LOCK",
+      locked: !isEditor,
+    });
 
-    return base;
+    return baseTiles;
   }, [isEditor]);
 
   return (
-    <main ref={rootRef} className="relative min-h-screen overflow-hidden text-white">
-      {/* Layer: starfield + parallax glow */}
-      <div className="absolute inset-0 starfield" />
-      <div className="absolute inset-0 hud-grid opacity-[0.12]" />
-      <div className="absolute inset-0 scanlines pointer-events-none" />
-      <div className="absolute inset-0 holo-glow pointer-events-none" />
+    <main className="gm-bg relative min-h-screen overflow-hidden text-white">
+      {/* starfield */}
+      <canvas ref={canvasRef} className="gm-stars absolute inset-0 h-full w-full" />
 
-      {/* Top header */}
-      <div className="relative z-10 mx-auto max-w-7xl px-6 py-14">
-        <div className="flex flex-col items-center gap-4 text-center">
-          <div className="inline-flex items-center gap-3 rounded-full border border-hud-line/70 bg-black/30 px-4 py-2 backdrop-blur">
-            <span className="h-2 w-2 rounded-full bg-marine-500 shadow-[0_0_20px_rgba(99,102,241,.65)]" />
-            <span className="text-xs tracking-[0.28em] uppercase text-hud-muted">GM // Command Deck</span>
-            <span className="text-xs text-hud-muted">
-              {status === "loading"
-                ? "SYNC…"
-                : session?.user
-                  ? `AUTH // ${(session.user as any)?.name ?? "ONLINE"}`
-                  : "GUEST"}
-            </span>
-          </div>
+      {/* holo glow */}
+      <div ref={glowRef} className="gm-glow absolute inset-0" />
 
-          <h1 className="glitch-title text-5xl md:text-7xl font-semibold tracking-[0.18em]">
-            GALACTIC MARINES
+      {/* scanlines + grid */}
+      <div className="gm-scanlines absolute inset-0 pointer-events-none" />
+      <div className="gm-grid absolute inset-0 pointer-events-none" />
+
+      <div className="relative z-10 mx-auto max-w-6xl px-6 py-16">
+        <header className="mb-12">
+          <div className="gm-kicker">COMMAND INTERFACE</div>
+          <h1 className="gm-title">
+            GALACTIC <span className="gm-title-accent">MARINES</span>
           </h1>
-          <p className="max-w-2xl text-sm md:text-base text-hud-muted tracking-wide">
-            Zugriff auf Personal, Archive und Operationen. Wähle ein Systemmodul, um fortzufahren.
+          <p className="gm-subtitle">
+            Zugriff auf operative Systeme. Wähle ein Modul, um fortzufahren.
           </p>
+        </header>
 
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-hud-muted">
-            <span className="rounded-full border border-hud-line/70 bg-black/20 px-3 py-1">SECURITY: ACTIVE</span>
-            <span className="rounded-full border border-hud-line/70 bg-black/20 px-3 py-1">SIGNAL: STABLE</span>
-            <span className="rounded-full border border-hud-line/70 bg-black/20 px-3 py-1">HUD: ONLINE</span>
-          </div>
-        </div>
-
-        {/* Tiles */}
-        <section className="mt-14 grid gap-7 md:grid-cols-2">
-          {tiles.map((t: any) => {
-            const content = (
-              <div
-                className={["tile", t.accent, t.locked ? "tile-locked" : ""].join(" ")}
-                style={{ transformStyle: "preserve-3d" }}
-              >
-                <div className="tile-bg" />
-                <div className="tile-border" />
-
-                <div className="relative z-10">
-                  <div className="flex items-start justify-between gap-4">
+        <section className="grid gap-10 md:grid-cols-2">
+          {tiles.map((t) => {
+            const Card = (
+              <div className={`gm-tile group ${t.accent}`}>
+                <div className="gm-tile-frame" />
+                <div className="gm-tile-sweep" />
+                <div className="gm-tile-content">
+                  <div className="gm-tile-top">
                     <div>
-                      <div className="tile-tag">{t.tag}</div>
-                      <h2 className="mt-3 text-2xl md:text-3xl font-semibold tracking-wide">{t.title}</h2>
-                      <p className="mt-2 text-sm text-hud-muted">{t.subtitle}</p>
+                      <div className="gm-tile-sub">{t.subtitle}</div>
+                      <div className="gm-tile-title">{t.title}</div>
                     </div>
-                    <div className="tile-radar" aria-hidden />
+                    <div className="gm-tag">{t.tag}</div>
                   </div>
 
-                  <div className="mt-6 grid gap-2">
-                    {t.lines.map((line: string) => (
-                      <div key={line} className="tile-line">
-                        <span className="tile-dot" />
-                        <span className="text-sm">{line}</span>
-                      </div>
+                  <ul className="gm-lines">
+                    {t.lines.map((line) => (
+                      <li key={line}>{line}</li>
                     ))}
-                  </div>
+                  </ul>
 
-                  <div className="mt-8 flex items-center justify-between">
-                    <div className="tile-footnote">{t.locked ? "ACCESS: DENIED" : "ACCESS: GRANTED"}</div>
-                    <div className="tile-cta">
-                      {t.locked ? "AUTH REQUIRED" : "OPEN MODULE"}
-                      <span className="tile-cta-arrow" aria-hidden>
-                        ↗
-                      </span>
-                    </div>
+                  <div className="gm-cta">
+                    <span className="gm-cta-label">OPEN MODULE</span>
+                    <span className="gm-cta-arrow">→</span>
                   </div>
                 </div>
+
+                {t.locked && (
+                  <div className="gm-lock">
+                    <div className="gm-lock-inner">
+                      <div className="gm-lock-title">ZUGRIFF GESPERRT</div>
+                      <div className="gm-lock-text">Nur Editors können dieses Modul öffnen.</div>
+                      <div className="gm-lock-chip">AUTH REQUIRED</div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
 
-            return t.locked ? (
-              <div key={t.title} className="opacity-90">
-                {content}
-              </div>
-            ) : (
+            if (t.locked) {
+              return (
+                <div key={t.title} className="cursor-not-allowed opacity-95">
+                  {Card}
+                </div>
+              );
+            }
+
+            return (
               <Link key={t.title} href={t.href} className="block">
-                {content}
+                {Card}
               </Link>
             );
           })}
         </section>
 
-        <footer className="relative z-10 mt-14 text-center text-xs text-hud-muted">
-          <span className="opacity-90">Build for Galactic Marines</span>
-          <span className="mx-2">•</span>
-          <span className="opacity-90">No audio • Maximum vibe</span>
+        <footer className="mt-14 gm-footer">
+          <div className="gm-footer-left">
+            STATUS: <span className="gm-ok">ONLINE</span>
+          </div>
+          <div className="gm-footer-right">
+            {isEditor ? "ROLE: EDITOR" : "ROLE: STANDARD"} • SECURE CHANNEL • v0.9
+          </div>
         </footer>
       </div>
     </main>
-  );
-}
-
-export default function Page() {
-  return (
-    <SessionProvider>
-      <CommandDeckHomeInner />
-    </SessionProvider>
   );
 }
