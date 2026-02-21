@@ -66,6 +66,9 @@ function parseJsonSafe(text: string) {
 
 export default function MembersPage() {
   const { data: session } = useSession();
+  const canPromoteAll = !!(session as any)?.canSeeFE;
+  const canUOLimitedPromote = !!(session as any)?.canSeeUO && !canPromoteAll;
+
   const canToggleTraining = !!(session as any)?.canSeeFE; // FE-ID = darf abhaken
   const isEditor = !!(session as any)?.isEditor; // befördern/degradieren
 
