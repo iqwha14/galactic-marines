@@ -11,6 +11,7 @@ type Payload = {
   marines: Marine[];
   adjutantCards: Marine[];
   absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: Absence[] }[];
+  trainings: string[];
 };
 
 function fmtDate(iso?: string) {
@@ -51,10 +52,25 @@ export default function MembersPage() {
     return [...rows].sort((a, b) => a.name.localeCompare(b.name, "de"));
   }, [data]);
 
+  const trainings = useMemo(() => {
+    const t = data?.trainings ?? [];
+    return [...t].sort((a, b) => a.localeCompare(b, "de"));
+  }, [data]);
+
   return (
     <main className="min-h-screen hud-grid px-6 py-10">
       <div className="mx-auto max-w-6xl">
-        <TopBar title="Mitgliederverwaltung" subtitle="PERSONNEL / ROSTER" right={<Link href="/" className="btn btn-ghost">← Command Deck</Link>} />
+        <TopBar
+          title="Mitgliederverwaltung"
+          subtitle="PERSONNEL / ROSTER"
+          right={
+            <div className="flex items-center gap-2">
+              <Link href="/" className="btn btn-ghost">
+                ← Command Deck
+              </Link>
+            </div>
+          }
+        />
 
         {err ? (
           <div className="mb-6 rounded-xl border border-marine-500/40 bg-marine-500/10 p-4 text-sm">
@@ -90,7 +106,9 @@ export default function MembersPage() {
                         </td>
                         <td className="border-b border-hud-line/40 py-4 pr-4 text-hud-muted">{m.unitGroup}</td>
                         <td className="border-b border-hud-line/40 py-4 pr-0 text-right">
-                          <a href={m.url} target="_blank" rel="noreferrer" className="btn btn-accent">Trello</a>
+                          <a href={m.url} target="_blank" rel="noreferrer" className="btn btn-accent">
+                            Trello
+                          </a>
                         </td>
                       </tr>
                     ))}
@@ -111,13 +129,20 @@ export default function MembersPage() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="font-medium">{a.name}</div>
-                          <div className="mt-1 text-xs text-hud-muted">{a.rank} • {a.unitGroup}</div>
+                          <div className="mt-1 text-xs text-hud-muted">
+                            {a.rank} • {a.unitGroup}
+                          </div>
                         </div>
-                        <a href={a.url} target="_blank" rel="noreferrer" className="btn btn-ghost">Trello</a>
+                        <a href={a.url} target="_blank" rel="noreferrer" className="btn btn-ghost">
+                          Trello
+                        </a>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {a.absences.map((ab, idx) => (
-                          <span key={idx} className="inline-flex items-center rounded-full border border-marine-500/30 bg-marine-500/10 px-3 py-1 text-xs">
+                          <span
+                            key={idx}
+                            className="inline-flex items-center rounded-full border border-marine-500/30 bg-marine-500/10 px-3 py-1 text-xs"
+                          >
                             {ab.label} • {fmtDate(ab.from)} → {fmtDate(ab.to)}
                           </span>
                         ))}
@@ -139,18 +164,45 @@ export default function MembersPage() {
                     .slice()
                     .sort((a, b) => a.name.localeCompare(b.name, "de"))
                     .map((m) => (
-                      <div key={m.id} className="flex items-center justify-between rounded-xl border border-hud-line/70 bg-black/20 p-3">
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between rounded-xl border border-hud-line/70 bg-black/20 p-3"
+                      >
                         <div>
                           <div className="font-medium">{m.name}</div>
-                          <div className="mt-1 text-xs text-hud-muted">{m.rank} • {m.unitGroup}</div>
+                          <div className="mt-1 text-xs text-hud-muted">
+                            {m.rank} • {m.unitGroup}
+                          </div>
                         </div>
-                        <a href={m.url} target="_blank" rel="noreferrer" className="btn btn-ghost">Trello</a>
+                        <a href={m.url} target="_blank" rel="noreferrer" className="btn btn-ghost">
+                          Trello
+                        </a>
                       </div>
                     ))}
                 </div>
               ) : (
                 <div className="text-hud-muted">Keine Adjutanten gefunden.</div>
               )}
+            </HudCard>
+
+            <HudCard title="Fortbildungen">
+              {loading ? (
+                <div className="text-hud-muted">Lade…</div>
+              ) : trainings.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {trainings.map((t) => (
+                    <span
+                      key={t}
+                      className="inline-flex items-center rounded-full border border-marine-500/30 bg-marine-500/10 px-3 py-1 text-xs"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-hud-muted">Keine Fortbildungen gefunden.</div>
+              )}
+              <div className="mt-3 text-xs text-hud-muted">Quelle: Trello Checklists (Trainings).</div>
             </HudCard>
           </div>
         </div>
