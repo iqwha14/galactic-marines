@@ -5,8 +5,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { signIn, signOut } from "next-auth/react";
 
 type SessionShape = {
-  user?: { name?: string | null; image?: string | null; isEditor?: boolean; isAdmin?: boolean };
+  user?: { name?: string | null; image?: string | null };
   discordId?: string | null;
+  isAdmin?: boolean;
+  canSeeFE?: boolean;
+  canSeeUO?: boolean;
 };
 
 type Tile = {
@@ -22,20 +25,26 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+function roleLabel(sess: SessionShape | null): string {
+  if (!sess) return "Standard";
+  if (sess.isAdmin) return "Einheitsleitung";
+  if (sess.canSeeFE) return "FE";
+  if (sess.canSeeUO) return "UO";
+  return "Standard";
+}
+
 export default function CommandDeck() {
   const [sess, setSess] = useState<SessionShape | null>(null);
   const [roleLoaded, setRoleLoaded] = useState(false);
 
   const isSignedIn = !!sess?.user;
-  const isEditor = !!sess?.user?.isEditor;
-  const isAdmin = !!sess?.user?.isAdmin;
 
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const res = await fetch("/api/auth/session", { credentials: "include" });
-        const json = (await res.json().catch(() => null)) as SessionShape | null;
+        const json = (await res.json().catch(() => null)) as any;
         if (alive) {
           setSess(json);
           setRoleLoaded(true);
@@ -49,7 +58,6 @@ export default function CommandDeck() {
     };
   }, []);
 
-  // mouse-follow holo glow
   const glowRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -62,7 +70,6 @@ export default function CommandDeck() {
     return () => window.removeEventListener("mousemove", onMove);
   }, []);
 
-  // starfield (redline theme)
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -92,14 +99,7 @@ export default function CommandDeck() {
     const tick = () => {
       ctx.clearRect(0, 0, w, h);
 
-      const g = ctx.createRadialGradient(
-        w * 0.52,
-        h * 0.42,
-        0,
-        w * 0.5,
-        h * 0.5,
-        Math.max(w, h) * 0.65
-      );
+      const g = ctx.createRadialGradient(w * 0.52, h * 0.42, 0, w * 0.5, h * 0.5, Math.max(w, h) * 0.65);
       g.addColorStop(0, "rgba(215,40,70,0.07)");
       g.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = g;
@@ -124,7 +124,6 @@ export default function CommandDeck() {
         ctx.fill();
       }
       ctx.globalAlpha = 1;
-
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -140,7 +139,7 @@ export default function CommandDeck() {
       {
         title: "Mitgliederverwaltung",
         subtitle: "PERSONNEL / ROSTER",
-        lines: ["Soldaten", "Abmeldungen", "Adjutanten"],
+        lines: ["Soldaten", "Abmeldungen", "Adjutanten", "Fortbildungen"],
         href: "/members",
         tag: "ACCESS: STANDARD",
       },
@@ -158,17 +157,20 @@ export default function CommandDeck() {
         href: "/ops",
         tag: "ACCESS: STANDARD",
       },
-      {
-        title: "Verwaltung",
-        subtitle: "ADMIN / CONTROL",
-        lines: ["Logs", "Rollen & Rechte", "Audit-Trail", "Datenexport", "Feature Toggles", "Notfallmodus"],
-        href: "/admin",
-        tag: isEditor ? (isAdmin ? "ACCESS: ADMIN" : "ACCESS: EDITOR") : "ACCESS: DENIED",
-        locked: !isEditor,
-      },
     ];
+
+    const locked = !sess?.isAdmin;
+    base.push({
+      title: "Verwaltung",
+      subtitle: "UNIT CONTROL",
+      lines: ["Logs", "Rollen & Rechte", "Audit-Trail", "Datenexport", "Feature Toggles", "Notfallmodus"],
+      href: "/admin",
+      tag: locked ? "ACCESS: DENIED" : "ACCESS: EINHEITSLEITUNG",
+      locked,
+    });
+
     return base;
-  }, [isEditor, isAdmin]);
+  }, [sess?.isAdmin]);
 
   return (
     <main className="gm-bg relative min-h-screen overflow-hidden text-white">
@@ -194,9 +196,7 @@ export default function CommandDeck() {
                   <div className="gm-chip">
                     <div className="text-xs text-white/70">SIGNED IN</div>
                     <div className="text-sm font-medium">{sess?.user?.name || sess?.discordId || "Discord"}</div>
-                    <div className="text-xs text-white/60">
-                      {isAdmin ? "ADMIN" : isEditor ? "EDITOR" : "STANDARD"}
-                    </div>
+                    <div className="text-xs text-white/60">{roleLabel(sess)}</div>
                   </div>
                   <button type="button" className="gm-btn gm-btn-ghost" onClick={() => signOut({ callbackUrl: "/" })}>
                     Logout
@@ -250,7 +250,7 @@ export default function CommandDeck() {
                   <div className="gm-lock">
                     <div className="gm-lock-inner">
                       <div className="gm-lock-title">ZUGRIFF GESPERRT</div>
-                      <div className="gm-lock-text">Nur Editors können dieses Modul öffnen.</div>
+                      <div className="gm-lock-text">Nur Einheitsleitung kann dieses Modul öffnen.</div>
                       <div className="gm-lock-chip">AUTH REQUIRED</div>
                     </div>
                   </div>
@@ -258,14 +258,7 @@ export default function CommandDeck() {
               </div>
             );
 
-            if (t.locked) {
-              return (
-                <div key={t.title} className="cursor-not-allowed">
-                  {Card}
-                </div>
-              );
-            }
-
+            if (t.locked) return <div key={t.title} className="cursor-not-allowed">{Card}</div>;
             return (
               <Link key={t.title} href={t.href} className="block">
                 {Card}
