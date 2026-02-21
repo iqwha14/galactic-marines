@@ -138,7 +138,7 @@ export default function CommandDeck() {
     const base: Tile[] = [
       {
         title: "Mitgliederverwaltung",
-        subtitle: "PERSONNEL / ROSTER",
+        subtitle: "SOLDATEN / MARINES",
         lines: ["Soldaten", "Abmeldungen", "Adjutanten", "Fortbildungen"],
         href: "/members",
         tag: "ACCESS: STANDARD",
@@ -183,9 +183,9 @@ export default function CommandDeck() {
         <header className="mb-10 flex flex-col gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="gm-kicker">COMMAND DECK</div>
+              <div className="gm-kicker">GALACTIC MARINES</div>
               <h1 className="gm-title">
-                MARINE <span className="gm-title-accent">BUREAU</span>
+                MARINE <span className="gm-title-accent">COMMAND DECK</span>
               </h1>
               <p className="gm-subtitle">Zugriff auf operative Systeme. Wähle ein Modul.</p>
             </div>
@@ -215,7 +215,7 @@ export default function CommandDeck() {
               STATUS: <span className="gm-ok">ONLINE</span>
               {!roleLoaded && <span className="ml-3 text-white/55">SYNC…</span>}
             </span>
-            <span className="text-white/55">SECURE CHANNEL • REDLINE THEME</span>
+            <span className="text-white/55">SECURE CHANNEL • REPUBLIC COMLINK</span>
           </div>
         </header>
 
