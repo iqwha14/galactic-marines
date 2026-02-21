@@ -37,9 +37,21 @@ export async function GET() {
 
     const html = await res.text();
 
-    // Heuristic: find file entries: ["<id>","<name>", ...]
+    // Heuristic: find file entries:
+    // Pattern A: ["<id>","<name>", ...]
+ ["<id>","<name>", ...]
     // We'll collect (id,name) pairs where id looks like a drive file id and name has an extension or spaces.
     const items: Item[] = [];
+
+    // Pattern B: data-id="FILEID" ... aria-label="FILENAME"
+    const reB = /data-id="([a-zA-Z0-9_-]{20,})"[\s\S]{0,260}?aria-label="([^"]{1,200})"/g;
+    let mb: RegExpExecArray | null;
+    while ((mb = reB.exec(html))) {
+      const id = mb[1];
+      const name = mb[2].replace(/\s+/g, " ").trim();
+      if (id && name && !items.find((x) => x.id === id)) items.push({ id, name });
+    }
+
     const re = /\["([a-zA-Z0-9_-]{10,})","([^"]{1,120})"/g;
     let m: RegExpExecArray | null;
     const seen = new Set<string>();

@@ -66,15 +66,11 @@ function parseJsonSafe(text: string) {
 
 export default function MembersPage() {
   const { data: session } = useSession();
+  const canPromoteAll = !!(session as any)?.canSeeFE;
+  const canUOLimitedPromote = !!(session as any)?.canSeeUO && !canPromoteAll;
 
-  // Rollen (nur 4 Gruppen)
-  const isAdmin = !!(session as any)?.isAdmin;       // Einheitsleitung
-  const isFE = !!(session as any)?.canSeeFE;         // FE
-  const isUO = !!(session as any)?.canSeeUO;         // UO (inkl. FE/Admin)
-  const canToggleTraining = isUO;                    // UO/FE/Admin dürfen abhaken
-
-  const canPromoteAll = isAdmin || isFE;             // FE/Admin: alles
-  const canUOLimitedPromote = !canPromoteAll && isUO; // UO-only: nur Rekrut -> PFC
+  const canToggleTraining = !!(session as any)?.canSeeFE; // FE-ID = darf abhaken
+  const isEditor = !!(session as any)?.isEditor; // befördern/degradieren
 
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -110,7 +106,9 @@ export default function MembersPage() {
       await load();
       if (!alive) return;
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -149,6 +147,7 @@ export default function MembersPage() {
         if (qTraining !== "all") {
           const it = (m.trainings ?? []).find((t) => t.name === qTraining);
           if (!it) return false;
+          // both states allowed for filtering existence; user can set minTrainings for completed
         }
 
         if (qMedal !== "all") {
@@ -168,28 +167,32 @@ export default function MembersPage() {
 
   const listsByRankIndex = useMemo(() => {
     const lists = data?.lists ?? [];
-    return [...lists].sort((a, b) => {
+    // build ordered by rankIndex then name
+    const sorted = [...lists].sort((a, b) => {
       const ai = rankIndex(a.name);
       const bi = rankIndex(b.name);
       if (ai !== bi) return ai - bi;
       return a.name.localeCompare(b.name, "de");
     });
+    return sorted;
   }, [data]);
 
   const findAdjacentListId = (rankName: string, dir: -1 | 1): string | null => {
     const idx = rankIndex(rankName);
+    // Find list whose rankIndex is idx + dir (closest)
     const target = idx + dir;
     const candidates = listsByRankIndex.filter((l) => rankIndex(l.name) === target);
     if (candidates.length) return candidates[0].id;
 
-    const currentPos = listsByRankIndex.findIndex((l) => rankIndex(l.name) === idx);
+    // fallback: find next available in direction
+    const sorted = listsByRankIndex;
+    const currentPos = sorted.findIndex((l) => rankIndex(l.name) === idx);
     if (currentPos < 0) return null;
-    const next = listsByRankIndex[currentPos + dir];
+    const next = sorted[currentPos + dir];
     return next?.id ?? null;
   };
 
-  // dir: -1 = hoch (Befördern), +1 = runter (Degradieren) anhand deiner Rangliste (Commander ist Index 0)
-  const changeRank = async (cardId: string, currentRank: string, dir: -1 | 1) => {
+  const promoteDemote = async (cardId: string, currentRank: string, dir: -1 | 1) => {
     setErr(null);
     setToast(null);
     try {
@@ -204,7 +207,7 @@ export default function MembersPage() {
       const text = await res.text();
       const json = parseJsonSafe(text);
       if (!res.ok) throw new Error(json?.error || json?.details || text || `Request failed (${res.status})`);
-      setToast(dir === -1 ? "Beförderung durchgeführt." : "Degradierung durchgeführt.");
+      setToast(dir === 1 ? "Beförderung durchgeführt." : "Degradierung durchgeführt.");
       await load();
     } catch (e: any) {
       setErr(e?.message ?? String(e));
@@ -236,7 +239,11 @@ export default function MembersPage() {
   return (
     <main className="min-h-screen hud-grid px-6 py-10">
       <div className="mx-auto max-w-7xl">
-        <TopBar title="Mitgliederverwaltung" subtitle="PERSONNEL / ROSTER" right={<Link href="/" className="btn btn-ghost">← Command Deck</Link>} />
+        <TopBar
+          title="Mitgliederverwaltung"
+          subtitle="PERSONNEL / ROSTER"
+          right={<Link href="/" className="btn btn-ghost">← Command Deck</Link>}
+        />
 
         {toast ? <div className="mb-6 rounded-xl border border-hud-line/70 bg-black/20 p-3 text-sm">{toast}</div> : null}
         {err ? (
@@ -251,52 +258,79 @@ export default function MembersPage() {
             <div className="grid gap-3">
               <label className="text-sm">
                 <div className="text-xs text-hud-muted mb-1">Name</div>
-                <input className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
-                  value={qName} onChange={(e) => setQName(e.target.value)} placeholder="Suchen…" />
+                <input
+                  className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
+                  value={qName}
+                  onChange={(e) => setQName(e.target.value)}
+                  placeholder="Suchen…"
+                />
               </label>
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-sm">
                   <div className="text-xs text-hud-muted mb-1">Rang</div>
-                  <select className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
-                    value={qRank} onChange={(e) => setQRank(e.target.value)}>
+                  <select
+                    className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
+                    value={qRank}
+                    onChange={(e) => setQRank(e.target.value)}
+                  >
                     <option value="all">Alle</option>
-                    {ranks.map((r) => <option key={r} value={r}>{r}</option>)}
+                    {ranks.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
                   </select>
                 </label>
 
                 <label className="text-sm">
                   <div className="text-xs text-hud-muted mb-1">Medaille</div>
-                  <select className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
-                    value={qMedal} onChange={(e) => setQMedal(e.target.value)}>
+                  <select
+                    className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
+                    value={qMedal}
+                    onChange={(e) => setQMedal(e.target.value)}
+                  >
                     <option value="all">Alle</option>
-                    {allMedals.map((m) => <option key={m} value={m}>{m}</option>)}
+                    {allMedals.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
                   </select>
                 </label>
               </div>
 
               <label className="text-sm">
                 <div className="text-xs text-hud-muted mb-1">Fortbildung (existiert auf Karte)</div>
-                <select className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
-                  value={qTraining} onChange={(e) => setQTraining(e.target.value)}>
+                <select
+                  className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
+                  value={qTraining}
+                  onChange={(e) => setQTraining(e.target.value)}
+                >
                   <option value="all">Alle</option>
-                  {allTrainings.map((t) => <option key={t} value={t}>{t}</option>)}
+                  {allTrainings.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
                 </select>
               </label>
 
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-sm">
                   <div className="text-xs text-hud-muted mb-1">Min. Medaillen (✓)</div>
-                  <input type="number" min={0}
+                  <input
+                    type="number"
+                    min={0}
                     className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
-                    value={minMedals} onChange={(e) => setMinMedals(Number(e.target.value || 0))} />
+                    value={minMedals}
+                    onChange={(e) => setMinMedals(Number(e.target.value || 0))}
+                  />
                 </label>
 
                 <label className="text-sm">
                   <div className="text-xs text-hud-muted mb-1">Min. Fortbildungen (✓)</div>
-                  <input type="number" min={0}
+                  <input
+                    type="number"
+                    min={0}
                     className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
-                    value={minTrainings} onChange={(e) => setMinTrainings(Number(e.target.value || 0))} />
+                    value={minTrainings}
+                    onChange={(e) => setMinTrainings(Number(e.target.value || 0))}
+                  />
                 </label>
               </div>
 
@@ -306,12 +340,12 @@ export default function MembersPage() {
 
               <div className="text-xs text-hud-muted">
                 Trainings: <span className="text-white/70">Grün = hat er</span>, <span className="text-white/70">Grau = hat er nicht</span>.
-                {canToggleTraining ? " (Klickbar: UO/FE/Einheitsleitung)" : " (Nur sichtbar)"}
+                {canToggleTraining ? " (Klickbar: FE-ID)" : " (Nur sichtbar)"}
               </div>
             </div>
           </HudCard>
 
-          <HudCard title="Abmeldungen">
+          <HudCard title="Abmeldungen" right={<span className="text-xs text-hud-muted">{(data?.absent?.length ?? 0)} aktiv</span>}>
             {loading ? (
               <div className="text-hud-muted">Lade…</div>
             ) : (data?.absent?.length ?? 0) ? (
@@ -327,7 +361,9 @@ export default function MembersPage() {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs">
                       {a.absences.map((ab, idx) => (
-                        <span key={idx} className="chip">{ab.label} • {ab.from ?? "?"} → {ab.to ?? "?"}</span>
+                        <span key={idx} className="chip">
+                          {ab.label} • {ab.from ?? "?"} → {ab.to ?? "?"}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -338,20 +374,13 @@ export default function MembersPage() {
             )}
           </HudCard>
 
-          <HudCard title="Rechte">
+          <HudCard title="Status">
             <div className="space-y-2 text-sm">
               <div>Einträge: <span className="text-white/80">{filtered.length}</span></div>
-              <div>Ränge Sortierung: <span className="text-white/80">Commander → Private Rekrut</span></div>
-              <div>
-                Rolle:{" "}
+              <div>Ränge Sortierung: <span className="text-white/80">Commander → Rekrut</span></div>
+              <div>Rechte:{" "}
                 <span className="text-white/80">
-                  {isAdmin ? "Einheitsleitung" : isFE ? "FE" : isUO ? "UO" : "Standard"}
-                </span>
-              </div>
-              <div>
-                Promote/Demote:{" "}
-                <span className="text-white/80">
-                  {canPromoteAll ? "ALL" : canUOLimitedPromote ? "UO: Rekrut→PFC" : "NONE"}
+                  {canToggleTraining ? "FE (Trainings klickbar)" : "kein FE"} • {isEditor ? "Editor (Promote/Demote)" : "kein Editor"}
                 </span>
               </div>
             </div>
@@ -384,76 +413,37 @@ export default function MembersPage() {
                   const medalDone = (m.medals ?? []).filter((x) => x.state === "complete").length;
                   const trainingDone = (m.trainings ?? []).filter((x) => x.state === "complete").length;
 
-                  const uoOnlyAllowed = canUOLimitedPromote && norm(m.rank).includes("private rekrut");
-
                   return (
                     <tr key={m.id} className="align-top hover:bg-white/5">
-                      <td className="border-b border-hud-line/40 py-4 pr-4">
-                        <div className="font-medium">{m.name}</div>
-                        <div className="mt-1 text-xs text-hud-muted">seit: {fmtDate(m.rankSince)}</div>
-                      </td>
-
-                      <td className="border-b border-hud-line/40 py-4 pr-4">
-                        <span className="inline-flex items-center gap-2 rounded-full border border-hud-line/80 bg-hud-panel/50 px-3 py-1 text-xs">
-                          <span className="h-1.5 w-1.5 rounded-full bg-marine-500" />
-                          {m.rank}
-                        </span>
-                      </td>
-
-                      <td className="border-b border-hud-line/40 py-4 pr-4">
-                        <div className="text-sm font-medium">{medalDone}</div>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {(m.medals ?? []).slice(0, 8).map((md) => (
-                            <span key={md.id} className="chip">{md.name}{md.state === "complete" ? " ✓" : ""}</span>
-                          ))}
-                        </div>
-                      </td>
-
-                      <td className="border-b border-hud-line/40 py-4 pr-4 min-w-[520px]">
-                        <div className="text-sm font-medium">{trainingDone} ✓</div>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {allTrainings.map((tName) => {
-                            const it = tMap.get(tName);
-                            const done = it?.state === "complete";
-                            const clickable = canToggleTraining && !!it?.id;
-                            return (
-                              <button
-                                key={tName}
-                                type="button"
-                                className={
-                                  "rounded-full border px-3 py-1 text-xs transition " +
-                                  (done ? "border-marine-500/45 bg-marine-500/20 text-white" : "border-hud-line/50 bg-black/15 text-white/65") +
-                                  (clickable ? " hover:bg-marine-500/25" : " cursor-default")
-                                }
-                                title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : "Nicht klickbar (kein UO/FE/Admin oder Item fehlt)"}
-                                onClick={() => {
-                                  if (!clickable || !it) return;
-                                  const next = it.state === "complete" ? "incomplete" : "complete";
-                                  toggleTraining(m.id, it.id, next);
-                                }}
-                              >
-                                {tName}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </td>
-
                       <td className="border-b border-hud-line/40 py-4 pr-4">
                         <div className="flex flex-col gap-2">
                           <button
                             className="btn btn-accent"
-                            disabled={!(canPromoteAll || uoOnlyAllowed)}
-                            onClick={() => changeRank(m.id, m.rank, -1)}
-                            title={canPromoteAll ? "Befördern" : uoOnlyAllowed ? "UO: Rekrut→PFC" : "Keine Rechte"}
+                            disabled={
+                              !(
+                                // FE/Admin dürfen immer
+                                canPromoteAll ||
+                                // UO darf nur Rekrut -> PFC (also "hoch" von Rekrut)
+                                (canUOLimitedPromote && norm(m.rank).includes("private rekrut"))
+                              ) || norm(m.rank).includes("commander")
+                            }
+                            onClick={() => promoteDemote(m.id, m.rank, -1)}
+                            title={
+                              canPromoteAll
+                                ? "Befördern (hoch)"
+                                : canUOLimitedPromote
+                                  ? "Nur Private Rekrut → Private First Class"
+                                  : "Keine Berechtigung"
+                            }
                           >
                             Befördern
                           </button>
+
                           <button
                             className="btn btn-accent"
-                            disabled={!canPromoteAll}
-                            onClick={() => changeRank(m.id, m.rank, +1)}
-                            title={canPromoteAll ? "Degradieren" : "Nur FE/Einheitsleitung"}
+                            disabled={!(canPromoteAll) || norm(m.rank).includes("private rekrut")}
+                            onClick={() => promoteDemote(m.id, m.rank, 1)}
+                            title={canPromoteAll ? "Degradieren (runter)" : "Nur FE/Admin"}
                           >
                             Degradieren
                           </button>
@@ -469,7 +459,9 @@ export default function MembersPage() {
 
                 {!filtered.length && !loading ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-hud-muted">Keine Treffer.</td>
+                    <td colSpan={6} className="py-8 text-center text-hud-muted">
+                      Keine Treffer.
+                    </td>
                   </tr>
                 ) : null}
               </tbody>
@@ -477,7 +469,7 @@ export default function MembersPage() {
           </div>
 
           <div className="mt-4 text-xs text-hud-muted">
-            Hinweis: Graue Fortbildungen werden nur dann klickbar, wenn das CheckItem auf der Karte existiert. Wenn Trello nicht alle Items enthält, musst du die Trainings-Checkliste auf dem Board vorbefüllen.
+            Hinweis: Graue Fortbildungen werden nur dann klickbar, wenn das CheckItem auf der Karte existiert. Wenn Trello nicht alle Items enthält, musst du die Checkliste auf dem Board mit allen Trainings vorbefüllen.
           </div>
         </div>
       </div>

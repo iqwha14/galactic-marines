@@ -44,26 +44,14 @@ function fmtDT(iso: string) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("de-DE");
 }
 
-// <input type="datetime-local"> returns YYYY-MM-DDTHH:mm (no timezone).
-// Supabase expects RFC3339/ISO. Convert robustly (server normalizes too).
-function toIsoFromLocal(value: string): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  const m = raw.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-  const candidate = m ? `${raw}:00` : raw;
-  const d = new Date(candidate);
-  return Number.isNaN(d.getTime()) ? raw : d.toISOString();
-}
-
-async function readError(res: Response): Promise<string> {
-  const txt = await res.text().catch(() => "");
-  try {
-    const j = txt ? JSON.parse(txt) : {};
-    const parts = [j?.error, j?.message, j?.details, j?.hint, j?.code].filter(Boolean).map(String);
-    return parts.length ? parts.join("\n") : txt || `${res.status} ${res.statusText}`;
-  } catch {
-    return txt || `${res.status} ${res.statusText}`;
-  }
+function toRfc3339(input: string) {
+  // Convert values from <input type="datetime-local"> (YYYY-MM-DDTHH:MM)
+  // into RFC3339/ISO for Supabase timestamptz.
+  const s = String(input ?? "").trim();
+  if (!s) return "";
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString();
+  return s;
 }
 
 /** Commander oben, Private unten. Major über Captain. (muss zum Trello-Parser passen) */
@@ -92,7 +80,7 @@ function rankIndex(rankName: string): number {
 export default function OpsPanel() {
   const { data: session } = useSession();
   const discordId = (session as any)?.discordId as string | undefined;
-  const canEdit = !!(session as any)?.isEditor;
+  const canEdit = !!(session as any)?.isAdmin || !!(session as any)?.canSeeFE;
 
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
@@ -190,10 +178,6 @@ export default function OpsPanel() {
     setNotice(null);
     setBusy(true);
     try {
-      if (!newTitle.trim() || !newPlanet.trim() || !newStart.trim()) {
-        throw new Error("Bitte Titel, Planet und Startzeit ausfüllen.");
-      }
-
       const participants = [
         ...newMembers.map((id) => ({ marine_card_id: id, role: null, is_lead: false })),
         ...(newLead ? [{ marine_card_id: newLead, role: "Einsatzleitung", is_lead: true }] : []),
@@ -210,25 +194,15 @@ export default function OpsPanel() {
         body: JSON.stringify({
           title: newTitle,
           planet: newPlanet,
-          start_at: toIsoFromLocal(newStart),
+          start_at: toRfc3339(newStart),
           units: newUnits,
           outcome: newOutcome,
           summary: newSummary,
           participants,
         }),
       });
-      const raw = await res.text().catch(() => "");
-      let j: any = null;
-      try {
-        j = raw ? JSON.parse(raw) : null;
-      } catch {
-        j = null;
-      }
-      if (!res.ok) {
-        const msg = j ? [j?.error, j?.message, j?.details, j?.hint, j?.code].filter(Boolean).map(String).join("\n") : (raw || `${res.status} ${res.statusText}`);
-        throw new Error(msg || "Create failed");
-      }
-      if (!j) throw new Error(raw || "Create failed");
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || j?.details || "Create failed");
 
       setNewTitle("");
       setNewPlanet("");
@@ -373,10 +347,6 @@ export default function OpsPanel() {
     setErr(null);
     setBusy(true);
     try {
-      if (!editTitle.trim() || !editPlanet.trim() || !editStart.trim()) {
-        throw new Error("Bitte Titel, Planet und Startzeit ausfüllen.");
-      }
-
       const participants = [
         ...editMembers.map((id) => ({ marine_card_id: id, role: null, is_lead: false })),
         ...(editLead ? [{ marine_card_id: editLead, role: "Einsatzleitung", is_lead: true }] : []),
@@ -393,26 +363,16 @@ export default function OpsPanel() {
         body: JSON.stringify({
           title: editTitle,
           planet: editPlanet,
-          start_at: toIsoFromLocal(editStart),
-          end_at: editEnd ? toIsoFromLocal(editEnd) : null,
+          start_at: toRfc3339(editStart),
+          end_at: editEnd ? toRfc3339(editEnd) : null,
           units: editUnits,
           outcome: editOutcome,
           summary: editSummary,
           participants,
         }),
       });
-      const raw = await res.text().catch(() => "");
-      let j: any = null;
-      try {
-        j = raw ? JSON.parse(raw) : null;
-      } catch {
-        j = null;
-      }
-      if (!res.ok) {
-        const msg = j ? [j?.error, j?.message, j?.details, j?.hint, j?.code].filter(Boolean).map(String).join("\n") : (raw || `${res.status} ${res.statusText}`);
-        throw new Error(msg || "Create failed");
-      }
-      if (!j) throw new Error(raw || "Create failed");
+      const j = await res.json();
+      if (!res.ok) throw new Error(j?.error || j?.details || "Update failed");
 
       await loadOps();
       setSelected(j.operation);
