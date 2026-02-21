@@ -214,8 +214,7 @@ export default function OpsPanel() {
         const msgParts = [j?.error, j?.message, j?.details, j?.hint, j?.code]
           .filter(Boolean)
           .map(String);
-        const msg = msgParts.length ? msgParts.join("
-") : String(raw || "Create failed");
+        const msg = msgParts.length ? msgParts.join("\n") : String(raw || "Create failed");
         throw new Error(msg);
       }
 
