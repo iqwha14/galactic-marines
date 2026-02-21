@@ -66,11 +66,14 @@ function parseJsonSafe(text: string) {
 
 export default function MembersPage() {
   const { data: session } = useSession();
-  const canPromoteAll = !!(session as any)?.canSeeFE;
-  const canUOLimitedPromote = !!(session as any)?.canSeeUO && !canPromoteAll;
 
-  const canToggleTraining = !!(session as any)?.canSeeFE; // FE-ID = darf abhaken
-  const isEditor = !!(session as any)?.isEditor; // befördern/degradieren
+  // 4 Rollen: Standard / UO / FE / Einheitsleitung(Admin)
+  const isAdmin = !!(session as any)?.isAdmin;
+  const isFE = !!(session as any)?.canSeeFE;
+  const isUO = !!(session as any)?.canSeeUO;
+  const canToggleChecks = isAdmin || isFE || isUO;
+  const canPromoteAll = isAdmin || isFE;
+  const canUOLimitedPromote = isUO && !canPromoteAll;
 
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -100,23 +103,16 @@ export default function MembersPage() {
     }
   };
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      await load();
-      if (!alive) return;
-    })();
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { load(); }, []);
 
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2200);
     return () => clearTimeout(t);
   }, [toast]);
+
+  const allTrainings = data?.trainings ?? [];
+  const allMedals = data?.medals ?? [];
 
   const ranks = useMemo(() => {
     const rs = new Set<string>();
@@ -128,6 +124,81 @@ export default function MembersPage() {
       return a.localeCompare(b, "de");
     });
   }, [data]);
+
+  const listsByRankIndex = useMemo(() => {
+    const lists = data?.lists ?? [];
+    return [...lists].sort((a, b) => {
+      const ai = rankIndex(a.name);
+      const bi = rankIndex(b.name);
+      if (ai !== bi) return ai - bi;
+      return a.name.localeCompare(b.name, "de");
+    });
+  }, [data]);
+
+  const findAdjacentListId = (rankName: string, dir: -1 | 1): string | null => {
+    const idx = rankIndex(rankName);
+    const target = idx + dir;
+    const candidates = listsByRankIndex.filter((l) => rankIndex(l.name) === target);
+    if (candidates.length) return candidates[0].id;
+
+    const sorted = listsByRankIndex;
+    const currentPos = sorted.findIndex((l) => rankIndex(l.name) === idx);
+    if (currentPos < 0) return null;
+    const next = sorted[currentPos + dir];
+    return next?.id ?? null;
+  };
+
+  const promoteDemote = async (cardId: string, currentRank: string, dir: -1 | 1) => {
+    setErr(null);
+    setToast(null);
+
+    // UO: nur Rekrut -> PFC (hoch)
+    if (canUOLimitedPromote) {
+      const r = norm(currentRank);
+      if (!(dir === 1 && r.includes("private rekrut"))) {
+        setErr("UO darf nur Private Rekrut → Private First Class befördern.");
+        return;
+      }
+    }
+
+    try {
+      const listId = findAdjacentListId(currentRank, dir);
+      if (!listId) throw new Error("Kein Ziel-Rang gefunden (Trello Liste fehlt?)");
+
+      const res = await fetch("/api/trello/promote", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cardId, listId }),
+      });
+      const text = await res.text();
+      const json = parseJsonSafe(text);
+      if (!res.ok) throw new Error(json?.error || json?.details || text || `Request failed (${res.status})`);
+
+      setToast(dir === 1 ? "Beförderung durchgeführt." : "Degradierung durchgeführt.");
+      await load();
+    } catch (e: any) {
+      setErr(e?.message ?? String(e));
+    }
+  };
+
+  const toggleCheckItem = async (cardId: string, checkItemId: string, nextState: "complete" | "incomplete") => {
+    setErr(null);
+    setToast(null);
+    try {
+      const res = await fetch("/api/trello/checkitem", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cardId, checkItemId, state: nextState }),
+      });
+      const text = await res.text();
+      const json = parseJsonSafe(text);
+      if (!res.ok) throw new Error(json?.error || json?.details || text || `Request failed (${res.status})`);
+      setToast(nextState === "complete" ? "Abgehakt." : "Zurückgesetzt.");
+      await load();
+    } catch (e: any) {
+      setErr(e?.message ?? String(e));
+    }
+  };
 
   const filtered = useMemo(() => {
     const marines = data?.marines ?? [];
@@ -147,14 +218,11 @@ export default function MembersPage() {
         if (qTraining !== "all") {
           const it = (m.trainings ?? []).find((t) => t.name === qTraining);
           if (!it) return false;
-          // both states allowed for filtering existence; user can set minTrainings for completed
         }
-
         if (qMedal !== "all") {
           const it = (m.medals ?? []).find((t) => t.name === qMedal);
           if (!it) return false;
         }
-
         return true;
       })
       .sort((a, b) => {
@@ -165,85 +233,10 @@ export default function MembersPage() {
       });
   }, [data, qName, qRank, qTraining, qMedal, minMedals, minTrainings]);
 
-  const listsByRankIndex = useMemo(() => {
-    const lists = data?.lists ?? [];
-    // build ordered by rankIndex then name
-    const sorted = [...lists].sort((a, b) => {
-      const ai = rankIndex(a.name);
-      const bi = rankIndex(b.name);
-      if (ai !== bi) return ai - bi;
-      return a.name.localeCompare(b.name, "de");
-    });
-    return sorted;
-  }, [data]);
-
-  const findAdjacentListId = (rankName: string, dir: -1 | 1): string | null => {
-    const idx = rankIndex(rankName);
-    // Find list whose rankIndex is idx + dir (closest)
-    const target = idx + dir;
-    const candidates = listsByRankIndex.filter((l) => rankIndex(l.name) === target);
-    if (candidates.length) return candidates[0].id;
-
-    // fallback: find next available in direction
-    const sorted = listsByRankIndex;
-    const currentPos = sorted.findIndex((l) => rankIndex(l.name) === idx);
-    if (currentPos < 0) return null;
-    const next = sorted[currentPos + dir];
-    return next?.id ?? null;
-  };
-
-  const promoteDemote = async (cardId: string, currentRank: string, dir: -1 | 1) => {
-    setErr(null);
-    setToast(null);
-    try {
-      const listId = findAdjacentListId(currentRank, dir);
-      if (!listId) throw new Error("Kein Ziel-Rang gefunden (Trello List fehlt?)");
-
-      const res = await fetch("/api/trello/promote", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cardId, listId }),
-      });
-      const text = await res.text();
-      const json = parseJsonSafe(text);
-      if (!res.ok) throw new Error(json?.error || json?.details || text || `Request failed (${res.status})`);
-      setToast(dir === 1 ? "Beförderung durchgeführt." : "Degradierung durchgeführt.");
-      await load();
-    } catch (e: any) {
-      setErr(e?.message ?? String(e));
-    }
-  };
-
-  const toggleTraining = async (cardId: string, checkItemId: string, nextState: "complete" | "incomplete") => {
-    setErr(null);
-    setToast(null);
-    try {
-      const res = await fetch("/api/trello/checkitem", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cardId, checkItemId, state: nextState }),
-      });
-      const text = await res.text();
-      const json = parseJsonSafe(text);
-      if (!res.ok) throw new Error(json?.error || json?.details || text || `Request failed (${res.status})`);
-      setToast(nextState === "complete" ? "Fortbildung abgehakt." : "Fortbildung zurückgesetzt.");
-      await load();
-    } catch (e: any) {
-      setErr(e?.message ?? String(e));
-    }
-  };
-
-  const allTrainings = data?.trainings ?? [];
-  const allMedals = data?.medals ?? [];
-
   return (
     <main className="min-h-screen hud-grid px-6 py-10">
       <div className="mx-auto max-w-7xl">
-        <TopBar
-          title="Mitgliederverwaltung"
-          subtitle="PERSONNEL / ROSTER"
-          right={<Link href="/" className="btn btn-ghost">← Command Deck</Link>}
-        />
+        <TopBar title="Mitgliederverwaltung" subtitle="PERSONNEL / ROSTER" right={<Link href="/" className="btn btn-ghost">← Command Deck</Link>} />
 
         {toast ? <div className="mb-6 rounded-xl border border-hud-line/70 bg-black/20 p-3 text-sm">{toast}</div> : null}
         {err ? (
@@ -339,8 +332,8 @@ export default function MembersPage() {
               </button>
 
               <div className="text-xs text-hud-muted">
-                Trainings: <span className="text-white/70">Grün = hat er</span>, <span className="text-white/70">Grau = hat er nicht</span>.
-                {canToggleTraining ? " (Klickbar: FE-ID)" : " (Nur sichtbar)"}
+                Chips: <span className="text-white/70">Grün = vorhanden/abgehakt</span>, <span className="text-white/70">Grau = fehlt/nicht abgehakt</span>.
+                {canToggleChecks ? " (klickbar)" : " (nur sichtbar)"}
               </div>
             </div>
           </HudCard>
@@ -361,9 +354,7 @@ export default function MembersPage() {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs">
                       {a.absences.map((ab, idx) => (
-                        <span key={idx} className="chip">
-                          {ab.label} • {ab.from ?? "?"} → {ab.to ?? "?"}
-                        </span>
+                        <span key={idx} className="chip">{ab.label} • {ab.from ?? "?"} → {ab.to ?? "?"}</span>
                       ))}
                     </div>
                   </div>
@@ -374,15 +365,20 @@ export default function MembersPage() {
             )}
           </HudCard>
 
-          <HudCard title="Status">
+          <HudCard title="Berechtigung">
             <div className="space-y-2 text-sm">
-              <div>Einträge: <span className="text-white/80">{filtered.length}</span></div>
-              <div>Ränge Sortierung: <span className="text-white/80">Commander → Rekrut</span></div>
-              <div>Rechte:{" "}
+              <div>Rolle:{" "}
                 <span className="text-white/80">
-                  {canToggleTraining ? "FE (Trainings klickbar)" : "kein FE"} • {isEditor ? "Editor (Promote/Demote)" : "kein Editor"}
+                  {isAdmin ? "Einheitsleitung" : isFE ? "FE" : isUO ? "UO" : "Standard"}
                 </span>
               </div>
+              <div>Abhaken: <span className="text-white/80">{canToggleChecks ? "ja" : "nein"}</span></div>
+              <div>Befördern/Degradieren:{" "}
+                <span className="text-white/80">
+                  {canPromoteAll ? "alles" : canUOLimitedPromote ? "nur Rekrut→PFC" : "nein"}
+                </span>
+              </div>
+              <div>Einträge: <span className="text-white/80">{filtered.length}</span></div>
             </div>
           </HudCard>
         </div>
@@ -410,40 +406,102 @@ export default function MembersPage() {
               <tbody>
                 {filtered.map((m) => {
                   const tMap = new Map((m.trainings ?? []).map((t) => [t.name, t] as const));
-                  const medalDone = (m.medals ?? []).filter((x) => x.state === "complete").length;
-                  const trainingDone = (m.trainings ?? []).filter((x) => x.state === "complete").length;
+                  const mdMap = new Map((m.medals ?? []).map((t) => [t.name, t] as const));
 
                   return (
                     <tr key={m.id} className="align-top hover:bg-white/5">
                       <td className="border-b border-hud-line/40 py-4 pr-4">
+                        <div className="font-medium">{m.name}</div>
+                        <div className="mt-1 text-xs text-hud-muted">seit: {fmtDate(m.rankSince)}</div>
+                      </td>
+
+                      <td className="border-b border-hud-line/40 py-4 pr-4">
+                        <span className="inline-flex items-center gap-2 rounded-full border border-hud-line/80 bg-hud-panel/50 px-3 py-1 text-xs">
+                          <span className="h-1.5 w-1.5 rounded-full bg-marine-500" />
+                          {m.rank}
+                        </span>
+                      </td>
+
+                      <td className="border-b border-hud-line/40 py-4 pr-4 min-w-[340px]">
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {allMedals.map((name) => {
+                            const it = mdMap.get(name);
+                            const done = it?.state === "complete";
+                            const clickable = canToggleChecks && !!it?.id;
+                            return (
+                              <button
+                                key={name}
+                                type="button"
+                                className={
+                                  "rounded-full border px-3 py-1 text-xs transition " +
+                                  (done
+                                    ? "border-marine-500/45 bg-marine-500/20 text-white"
+                                    : "border-hud-line/50 bg-black/15 text-white/65") +
+                                  (clickable ? " hover:bg-marine-500/25" : " cursor-default")
+                                }
+                                title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : "Nicht klickbar (Item fehlt oder keine Rechte)"}
+                                onClick={() => {
+                                  if (!clickable || !it) return;
+                                  const next = it.state === "complete" ? "incomplete" : "complete";
+                                  toggleCheckItem(m.id, it.id, next);
+                                }}
+                              >
+                                {name}
+                              </button>
+                            );
+                          })}
+                          {!allMedals.length ? <span className="text-hud-muted">—</span> : null}
+                        </div>
+                      </td>
+
+                      <td className="border-b border-hud-line/40 py-4 pr-4 min-w-[520px]">
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {allTrainings.map((name) => {
+                            const it = tMap.get(name);
+                            const done = it?.state === "complete";
+                            const clickable = canToggleChecks && !!it?.id;
+                            return (
+                              <button
+                                key={name}
+                                type="button"
+                                className={
+                                  "rounded-full border px-3 py-1 text-xs transition " +
+                                  (done
+                                    ? "border-marine-500/45 bg-marine-500/20 text-white"
+                                    : "border-hud-line/50 bg-black/15 text-white/65") +
+                                  (clickable ? " hover:bg-marine-500/25" : " cursor-default")
+                                }
+                                title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : "Nicht klickbar (Item fehlt oder keine Rechte)"}
+                                onClick={() => {
+                                  if (!clickable || !it) return;
+                                  const next = it.state === "complete" ? "incomplete" : "complete";
+                                  toggleCheckItem(m.id, it.id, next);
+                                }}
+                              >
+                                {name}
+                              </button>
+                            );
+                          })}
+                          {!allTrainings.length ? <span className="text-hud-muted">—</span> : null}
+                        </div>
+                      </td>
+
+                      <td className="border-b border-hud-line/40 py-4 pr-4">
                         <div className="flex flex-col gap-2">
                           <button
                             className="btn btn-accent"
-                            disabled={
-                              !(
-                                // FE/Admin dürfen immer
-                                canPromoteAll ||
-                                // UO darf nur Rekrut -> PFC (also "hoch" von Rekrut)
-                                (canUOLimitedPromote && norm(m.rank).includes("private rekrut"))
-                              ) || norm(m.rank).includes("commander")
-                            }
-                            onClick={() => promoteDemote(m.id, m.rank, -1)}
-                            title={
-                              canPromoteAll
-                                ? "Befördern (hoch)"
-                                : canUOLimitedPromote
-                                  ? "Nur Private Rekrut → Private First Class"
-                                  : "Keine Berechtigung"
-                            }
+                            disabled={!(canPromoteAll || (canUOLimitedPromote && norm(m.rank).includes("private rekrut")))}
+                            onClick={() => promoteDemote(m.id, m.rank, 1)}
+                            title={canPromoteAll ? "Befördern (hoch)" : canUOLimitedPromote ? "Nur Rekrut→PFC" : "Keine Rechte"}
                           >
                             Befördern
                           </button>
 
                           <button
                             className="btn btn-accent"
-                            disabled={!(canPromoteAll) || norm(m.rank).includes("private rekrut")}
-                            onClick={() => promoteDemote(m.id, m.rank, 1)}
-                            title={canPromoteAll ? "Degradieren (runter)" : "Nur FE/Admin"}
+                            disabled={!canPromoteAll}
+                            onClick={() => promoteDemote(m.id, m.rank, -1)}
+                            title={canPromoteAll ? "Degradieren (runter)" : "Nur FE/Einheitsleitung"}
                           >
                             Degradieren
                           </button>
@@ -469,7 +527,7 @@ export default function MembersPage() {
           </div>
 
           <div className="mt-4 text-xs text-hud-muted">
-            Hinweis: Graue Fortbildungen werden nur dann klickbar, wenn das CheckItem auf der Karte existiert. Wenn Trello nicht alle Items enthält, musst du die Checkliste auf dem Board mit allen Trainings vorbefüllen.
+            Hinweis: Grau wird nur klickbar, wenn das CheckItem auf der Trello-Karte existiert (ID nötig).
           </div>
         </div>
       </div>

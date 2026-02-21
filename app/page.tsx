@@ -144,7 +144,7 @@ export default function CommandDeck() {
         tag: "ACCESS: STANDARD",
       },
       {
-        title: "Dokumente",
+        title: "Dokumente (W.I.P)",
         subtitle: "ARCHIVE / DOCTRINE",
         lines: ["Einheitsdokumente", "UO Dokument", "FE Dokument"],
         href: "/documents",

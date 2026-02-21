@@ -80,7 +80,7 @@ function rankIndex(rankName: string): number {
 export default function OpsPanel() {
   const { data: session } = useSession();
   const discordId = (session as any)?.discordId as string | undefined;
-  const canEdit = !!(session as any)?.isAdmin || !!(session as any)?.canSeeFE;
+  const canEdit = !!(session as any)?.isEditor;
 
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
