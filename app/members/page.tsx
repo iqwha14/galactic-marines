@@ -469,17 +469,15 @@ export default function MembersPage() {
                         <div className="flex flex-col gap-2">
                           <button
                             className="btn btn-accent"
-                            disabled={!isEditor}
+                            disabled={!(canPromoteAll || (canUOLimitedPromote && norm(m.rank).includes("private rekrut")))}
                             onClick={() => promoteDemote(m.id, m.rank, -1)}
-                            title={isEditor ? "Degradieren" : "Nur Editor"}
-                          >
-                            Degradieren
-                          </button>
-                          <button
-                            className="btn btn-accent"
-                            disabled={!isEditor}
-                            onClick={() => promoteDemote(m.id, m.rank, 1)}
-                            title={isEditor ? "Befördern" : "Nur Editor"}
+                            title={
+                              canPromoteAll
+                                ? "Befördern"
+                                : canUOLimitedPromote
+                                ? "UO: nur Private Rekrut → Private First Class"
+                                : "Nur FE/UO"
+                            }
                           >
                             Befördern
                           </button>
