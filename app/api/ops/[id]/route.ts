@@ -2,35 +2,14 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase";
 import { requireEditor } from "@/lib/authz";
 
-function normalizeDateTimeStrict(input: any): { ok: true; value: string } | { ok: false; error: string } {
-  const s = String(input ?? "").trim();
-  if (!s) return { ok: false, error: "empty" };
-
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return { ok: true, value: s };
-
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) {
-    const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) return { ok: true, value: d.toISOString() };
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const d = new Date(`${s}T00:00`);
-    if (!Number.isNaN(d.getTime())) return { ok: true, value: d.toISOString() };
-  }
-
-  const d = new Date(s);
-  if (!Number.isNaN(d.getTime())) return { ok: true, value: d.toISOString() };
-
-  return { ok: false, error: `invalid datetime: ${s}` };
-}
-
-function normalizeOptionalDateTime(input: any): { ok: true; value: string | null } | { ok: false; error: string } {
-  if (input == null) return { ok: true, value: null };
-  const s = String(input).trim();
-  if (!s) return { ok: true, value: null };
-  const r = normalizeDateTimeStrict(s);
-  if (!r.ok) return r;
-  return { ok: true, value: r.value };
+function normalizeDateTime(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) throw new Error("empty");
+  const m = raw.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  const candidate = m ? `${raw}:00` : raw;
+  const d = new Date(candidate);
+  if (Number.isNaN(d.getTime())) throw new Error(`invalid: ${raw}`);
+  return d.toISOString();
 }
 
 /**
@@ -71,33 +50,31 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
   const body = await req.json().catch(() => ({}));
 
   const patch: any = {};
-
-  // Normalize date fields if provided
-  if ("start_at" in body) {
-    const startNorm = normalizeDateTimeStrict(body?.start_at);
-    if (!startNorm.ok) {
-      return NextResponse.json(
-        { error: "Invalid start_at", details: startNorm.error, received: body?.start_at ?? null },
-        { status: 400 }
-      );
-    }
-    patch.start_at = startNorm.value;
-  }
-
-  if ("end_at" in body) {
-    const endNorm = normalizeOptionalDateTime(body?.end_at);
-    if (!endNorm.ok) {
-      return NextResponse.json(
-        { error: "Invalid end_at", details: endNorm.error, received: body?.end_at ?? null },
-        { status: 400 }
-      );
-    }
-    patch.end_at = endNorm.value;
-  }
-
-  const allow = ["title", "planet", "units", "outcome", "summary", "image_url"];
+  const allow = ["title", "planet", "start_at", "end_at", "units", "outcome", "summary", "image_url"];
   for (const k of allow) {
-    if (k in body) patch[k] = body[k];
+    if (!(k in body)) continue;
+    // Normalize datetimes if needed (supports datetime-local)
+    if (k === "start_at") {
+      try {
+        patch.start_at = normalizeDateTime(body.start_at);
+      } catch (e: any) {
+        return NextResponse.json({ error: "Invalid datetime", details: `start_at ${String(e?.message ?? e)}` }, { status: 400 });
+      }
+      continue;
+    }
+    if (k === "end_at") {
+      const raw = String(body.end_at ?? "").trim();
+      if (!raw) patch.end_at = null;
+      else {
+        try {
+          patch.end_at = normalizeDateTime(raw);
+        } catch (e: any) {
+          return NextResponse.json({ error: "Invalid datetime", details: `end_at ${String(e?.message ?? e)}` }, { status: 400 });
+        }
+      }
+      continue;
+    }
+    patch[k] = body[k];
   }
 
   const participants = Array.isArray(body?.participants) ? body.participants : null;
@@ -105,12 +82,11 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
   const sb = supabaseServer();
 
   const { data: op, error: upErr } = await sb.from("operations").update(patch).eq("id", id).select("*").single();
-  if (upErr) {
+  if (upErr)
     return NextResponse.json(
-      { error: "Update failed", details: upErr.message, code: (upErr as any).code, hint: (upErr as any).hint },
+      { error: "Update failed", details: upErr.message, hint: (upErr as any).hint, code: (upErr as any).code },
       { status: 500 }
     );
-  }
 
   if (participants) {
     await sb.from("operation_participants").delete().eq("operation_id", id);
@@ -118,7 +94,7 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
     const rows = participants
       .map((p: any) => ({
         operation_id: id,
-        marine_card_id: String(p?.marine_card_id ?? "").trim(),
+        marine_card_id: String(p?.marine_card_id ?? ""),
         role: p?.role ? String(p.role) : null,
         is_lead: !!p?.is_lead,
       }))
@@ -126,17 +102,11 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
 
     if (rows.length) {
       const { error: partErr } = await sb.from("operation_participants").insert(rows);
-      if (partErr) {
+      if (partErr)
         return NextResponse.json(
-          {
-            error: "Participants update failed",
-            details: partErr.message,
-            code: (partErr as any).code,
-            hint: (partErr as any).hint,
-          },
+          { error: "Participants update failed", details: partErr.message, hint: (partErr as any).hint, code: (partErr as any).code },
           { status: 500 }
         );
-      }
     }
   }
 
@@ -156,12 +126,7 @@ export async function DELETE(_: Request, ctx: { params: { id: string } }) {
   await sb.from("operation_reports").delete().eq("operation_id", id);
 
   const { error } = await sb.from("operations").delete().eq("id", id);
-  if (error) {
-    return NextResponse.json(
-      { error: "Delete failed", details: error.message, code: (error as any).code, hint: (error as any).hint },
-      { status: 500 }
-    );
-  }
+  if (error) return NextResponse.json({ error: "Delete failed", details: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true });
 }
