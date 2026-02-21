@@ -183,7 +183,7 @@ export default function CommandDeck() {
         <header className="mb-10 flex flex-col gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="gm-kicker">GALACTIC MARINES</div>
+              <div className="gm-kicker">EGM GALACTIC MARINES</div>
               <h1 className="gm-title">
                 MARINE <span className="gm-title-accent">COMMAND DECK</span>
               </h1>
