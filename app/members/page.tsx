@@ -155,6 +155,17 @@ export default function MembersPage() {
           </HudCard>
         </div>
 
+<div className="mb-4 text-sm text-hud-muted">
+  Aktives Roster:{" "}
+  <span className="font-semibold text-white">
+    {view === "roster"
+      ? "Standard"
+      : view === "jedi"
+      ? "Jedi"
+      : "Adjutanten"}
+  </span>
+</div>
+
         {/* -------- ROSTER -------- */}
 
         <div className="mt-6 rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
