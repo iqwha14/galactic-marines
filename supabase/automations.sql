@@ -1,0 +1,1 @@
+-- Supabase tables for automations
