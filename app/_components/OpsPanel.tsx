@@ -80,7 +80,7 @@ function toRfc3339(input: string) {
   return s;
 }
 
-/** Commander oben, Private unten. Major über Captain. (muss zum Trello-Parser passen) */
+/** Commander oben, Private unten. Major über Captain. (muss zum Trello-Parser passen)  PARSEN */
 const rankOrder = [
   "commander",
   "major",
