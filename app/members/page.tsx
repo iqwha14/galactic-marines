@@ -22,9 +22,7 @@ type Payload = {
   trainings: string[];
   medals: string[];
   lists: { id: string; name: string }[];
-  absent: any[];
-
-  // 👇 DAS HIER HINZUFÜGT
+  absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: { label: string; from?: string; to?: string }[] }[];
   jediListId?: string | null;
   adjutantListId?: string | null;
 };
@@ -90,7 +88,6 @@ export default function MembersPage() {
   const [qMedal, setQMedal] = useState<string>("all");
   const [minMedals, setMinMedals] = useState<number>(0);
   const [minTrainings, setMinTrainings] = useState<number>(0);
-  const [view, setView] = useState<"all" | "jedi" | "adjutant">("all");
 
   const load = async () => {
     setLoading(true);
@@ -203,9 +200,7 @@ const res = await fetch("/api/trello/promote", {
   };
 
   const filtered = useMemo(() => {
-    let marines: Marine[] = (data?.marines ?? []) as Marine[];
-    if (view === "jedi" && (data as any)?.jediCards) marines = ((data as any).jediCards ?? []) as Marine[];
-    if (view === "adjutant" && (data as any)?.adjutantCards) marines = ((data as any).adjutantCards ?? []) as Marine[];
+    const marines = data?.marines ?? [];
     const nameQ = norm(qName);
 
     return marines
@@ -335,51 +330,48 @@ const res = await fetch("/api/trello/promote", {
                 Reset
               </button>
 
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <a
+                  className={[
+                    "btn",
+                    "btn-ghost",
+                    data?.jediListId ? "" : "opacity-50 cursor-not-allowed",
+                  ].join(" ")}
+                  href={data?.jediListId ? `https://trello.com/l/${data.jediListId}` : undefined}
+                  target={data?.jediListId ? "_blank" : undefined}
+                  rel={data?.jediListId ? "noreferrer" : undefined}
+                  aria-disabled={!data?.jediListId}
+                  onClick={(e) => {
+                    if (!data?.jediListId) e.preventDefault();
+                  }}
+                  title={data?.jediListId ? "Jedi Trello-Liste öffnen" : "TRELLO_JEDI_LIST_ID fehlt"}
+                >
+                  Jedi
+                </a>
 
-<div className="mt-3 flex flex-wrap items-center gap-2">
-  <button
-    type="button"
-    className={["btn", "btn-ghost", view === "all" ? "border border-hud-line/80" : ""].join(" ")}
-    onClick={() => setView("all")}
-    title="Alle Marines anzeigen"
-  >
-    Alle
-  </button>
+                <a
+                  className={[
+                    "btn",
+                    "btn-ghost",
+                    data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed",
+                  ].join(" ")}
+                  href={data?.adjutantListId ? `https://trello.com/l/${data.adjutantListId}` : undefined}
+                  target={data?.adjutantListId ? "_blank" : undefined}
+                  rel={data?.adjutantListId ? "noreferrer" : undefined}
+                  aria-disabled={!data?.adjutantListId}
+                  onClick={(e) => {
+                    if (!data?.adjutantListId) e.preventDefault();
+                  }}
+                  title={data?.adjutantListId ? "Adjutanten Trello-Liste öffnen" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
+                >
+                  Adjutanten
+                </a>
 
-  <button
-    type="button"
-    className={[
-      "btn",
-      "btn-ghost",
-      view === "jedi" ? "border border-hud-line/80" : "",
-      data?.jediListId ? "" : "opacity-50 cursor-not-allowed",
-    ].join(" ")}
-    onClick={() => data?.jediListId && setView("jedi")}
-    disabled={!data?.jediListId}
-    title={data?.jediListId ? "Einheitsjedi anzeigen" : "TRELLO_JEDI_LIST_ID fehlt"}
-  >
-    Jedi
-  </button>
+                <button className="btn btn-ghost" type="button" onClick={load}>
+                  Reload
+                </button>
+              </div>
 
-  <button
-    type="button"
-    className={[
-      "btn",
-      "btn-ghost",
-      view === "adjutant" ? "border border-hud-line/80" : "",
-      data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed",
-    ].join(" ")}
-    onClick={() => data?.adjutantListId && setView("adjutant")}
-    disabled={!data?.adjutantListId}
-    title={data?.adjutantListId ? "Adjutanten anzeigen" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
-  >
-    Adjutanten
-  </button>
-
-  <button className="btn btn-ghost" onClick={load} type="button">
-    Reload
-  </button>
-</div>
 
               <div className="text-xs text-hud-muted">
                 Chips: <span className="text-white/70">Grün = vorhanden/abgehakt</span>, <span className="text-white/70">Grau = fehlt/nicht abgehakt</span>.
@@ -403,7 +395,7 @@ const res = await fetch("/api/trello/promote", {
                       <a href={a.url} target="_blank" rel="noreferrer" className="btn btn-ghost">Trello</a>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                      {a.absences.map((ab, idx) => (
+                      {a.absences.map((ab: { label: string; from?: string | null; to?: string | null }, idx: number) => (
                         <span key={idx} className="chip">{ab.label} • {ab.from ?? "?"} → {ab.to ?? "?"}</span>
                       ))}
                     </div>
@@ -485,9 +477,9 @@ const res = await fetch("/api/trello/promote", {
                                 className={
                                   "rounded-full border px-3 py-1 text-xs transition " +
                                   (done
-                                    ? "border-green-500/60 bg-green-500/15 text-white"
+                                    ? "border-green-500/60 bg-green-500/20 text-white"
                                     : "border-hud-line/50 bg-black/15 text-white/65") +
-                                  (clickable ? " hover:bg-green-500/20" : " cursor-default")
+                                  (clickable ? " hover:bg-green-500/25" : " cursor-default")
                                 }
                                 title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : "Nicht klickbar (Item fehlt oder keine Rechte)"}
                                 onClick={() => {
@@ -517,9 +509,9 @@ const res = await fetch("/api/trello/promote", {
                                 className={
                                   "rounded-full border px-3 py-1 text-xs transition " +
                                   (done
-                                    ? "border-green-500/60 bg-green-500/15 text-white"
+                                    ? "border-green-500/60 bg-green-500/20 text-white"
                                     : "border-hud-line/50 bg-black/15 text-white/65") +
-                                  (clickable ? " hover:bg-green-500/20" : " cursor-default")
+                                  (clickable ? " hover:bg-green-500/25" : " cursor-default")
                                 }
                                 title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : "Nicht klickbar (Item fehlt oder keine Rechte)"}
                                 onClick={() => {
