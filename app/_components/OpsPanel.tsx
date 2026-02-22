@@ -80,7 +80,7 @@ function toRfc3339(input: string) {
   return s;
 }
 
-/** Commander oben, Private unten. Major über Captain. (muss zum Trello-Parser passen)  PARSEN */
+/** Commander oben, Private unten. Major über Captain. (muss zum Trello-Parser passen) */
 const rankOrder = [
   "commander",
   "major",
@@ -129,9 +129,6 @@ export default function OpsPanel() {
     ratings: any[];
     marineRatings: any[];
   } | null>(null);
-
-  const [myMemberCardId, setMyMemberCardId] = useState<string>("");
-  const [myMemberName, setMyMemberName] = useState<string>("");
 
   const [err, setErr] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -198,24 +195,9 @@ export default function OpsPanel() {
     setRatingsAll((j?.rows ?? []) as RatingsRow[]);
   }
 
-  async function loadMyUnitMember() {
-    if (!discordId) {
-      setMyMemberCardId("");
-      setMyMemberName("");
-      return;
-    }
-    const res = await fetch("/api/unit/me", { cache: "no-store" });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(j?.error || j?.details || "Unit member load failed");
-    const member = j?.member;
-    setMyMemberCardId(String(member?.marine_card_id ?? ""));
-    setMyMemberName(String(member?.display_name ?? ""));
-  }
-
   useEffect(() => {
     setErr(null);
     const jobs: Promise<any>[] = [loadOps(), loadRoster()];
-    if (discordId) jobs.push(loadMyUnitMember());
     Promise.all(jobs).catch((e: any) => setErr(String(e?.message ?? e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [discordId]);
@@ -254,60 +236,6 @@ export default function OpsPanel() {
     if (!r.length) return 0;
     return Math.round((r.reduce((a: any, b: any) => a + (Number(b.stars) || 0), 0) / r.length) * 10) / 10;
   }, [detail?.ratings]);
-
-  const viewerIsParticipant = useMemo(() => {
-    const card = String(myMemberCardId ?? "").trim();
-    if (!card) return false;
-    return (detail?.participants ?? []).some((p) => p.marine_card_id === card);
-  }, [detail?.participants, myMemberCardId]);
-
-  const isOpOver = useMemo(() => {
-    if (!selected) return false;
-    if (!selected.end_at) return false;
-    const d = new Date(selected.end_at);
-    if (Number.isNaN(d.getTime())) return false;
-    return Date.now() >= d.getTime();
-  }, [selected]);
-
-  const viewerIsParticipant = useMemo(() => {
-    const card = String(myMemberCardId ?? "").trim();
-    if (!card) return false;
-    return (detail?.participants ?? []).some((p) => p.marine_card_id === card);
-  }, [myMemberCardId, detail?.participants]);
-
-  const viewerCanJoin = useMemo(() => {
-    if (!discordId) return false;
-    const card = String(myMemberCardId ?? "").trim();
-    if (!card) return false;
-    if (!selected) return false;
-    if (isOpOver) return false;
-    return !(detail?.participants ?? []).some((p) => p.marine_card_id === card);
-  }, [discordId, myMemberCardId, selected, detail?.participants, isOpOver]);
-
-  const viewerCanLeave = useMemo(() => {
-    if (!discordId) return false;
-    if (!selected) return false;
-    if (isOpOver) return false;
-    return viewerIsParticipant;
-  }, [discordId, selected, isOpOver, viewerIsParticipant]);
-
-  async function joinSelectedOp() {
-    if (!selected) return;
-    setErr(null);
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/ops/${selected.id}/join`, { method: "POST" });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j?.error || j?.details || "Join failed");
-      await loadDetail(selected.id);
-      setToast({ kind: "ok", msg: "Du bist dem Einsatz beigetreten." });
-    } catch (e: any) {
-      setErr(String(e?.message ?? e));
-      setToast({ kind: "err", msg: String(e?.message ?? e) });
-    } finally {
-      setBusy(false);
-    }
-  }
 
   const avgByMarine = useMemo(() => {
     const map = new Map<string, { total: number; count: number }>();
@@ -923,43 +851,6 @@ export default function OpsPanel() {
                 <div className="mt-6 grid gap-6 lg:grid-cols-2">
                   <div className="rounded-2xl border border-hud-line/70 bg-black/10 p-4">
                     <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Teilnehmer</div>
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-xs text-hud-muted">
-                        {discordId ? (
-                          myMemberCardId ? (
-                            <>Angemeldet als <span className="text-white/80">{myMemberName || discordId}</span></>
-                          ) : (
-                            <>Du bist nicht als Einheit-Mitglied hinterlegt (Admin muss dich eintragen).</>
-                          )
-                        ) : (
-                          <>Login nötig, um beizutreten.</>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {viewerIsParticipant ? (
-                          <button
-                            className={"btn btn-ghost"}
-                            type="button"
-                            onClick={leaveSelectedOp}
-                            disabled={!viewerCanLeave || busy}
-                            title={viewerCanLeave ? "Einsatz verlassen" : isOpOver ? "Einsatz vorbei" : "Nicht möglich"}
-                          >
-                            Einsatz verlassen
-                          </button>
-                        ) : (
-                          <button
-                            className={"btn btn-ghost"}
-                            type="button"
-                            onClick={joinSelectedOp}
-                            disabled={!viewerCanJoin || busy}
-                            title={viewerCanJoin ? "Einsatz beitreten" : isOpOver ? "Einsatz vorbei" : "Nicht möglich"}
-                          >
-                            Einsatz beitreten
-                          </button>
-                        )}
-                        {isOpOver ? <span className="text-xs text-hud-muted">Beitritt deaktiviert (Einsatz vorbei).</span> : null}
-                      </div>
-                    </div>
                     <div className="mt-3 space-y-2">
                       {(detail?.participants ?? []).map((p) => {
                         const m = rosterById.get(p.marine_card_id);
@@ -985,25 +876,15 @@ export default function OpsPanel() {
                     </div>
 
                     <div className="mt-3">
-                      <Stars value={opStars} onChange={discordId && viewerIsParticipant ? setOpStars : undefined} />
+                      <Stars value={opStars} onChange={discordId ? setOpStars : undefined} />
                       <textarea
                         className="hud-input mt-3 min-h-[90px]"
-                        placeholder={
-                          !discordId
-                            ? "Login nötig zum Bewerten"
-                            : viewerIsParticipant
-                              ? "Kommentar (optional)"
-                              : "Nur Teilnehmer können bewerten"
-                        }
+                        placeholder={discordId ? "Kommentar (optional)" : "Login nötig zum Bewerten"}
                         value={opComment}
                         onChange={(e) => setOpComment(e.target.value)}
-                        disabled={!discordId || !viewerIsParticipant}
+                        disabled={!discordId}
                       />
-                      <button
-                        className="btn btn-accent mt-3"
-                        onClick={rateOperation}
-                        disabled={!discordId || !viewerIsParticipant || busy || opStars <= 0}
-                      >
+                      <button className="btn btn-accent mt-3" onClick={rateOperation} disabled={!discordId || busy || opStars <= 0}>
                         Bewerten
                       </button>
                     </div>
@@ -1012,9 +893,6 @@ export default function OpsPanel() {
 
                 <div className="mt-6 rounded-2xl border border-hud-line/70 bg-black/10 p-4">
                   <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Soldatenbewertung (im Einsatz)</div>
-                  {!viewerIsParticipant ? (
-                    <div className="mt-2 text-sm text-hud-muted">Nur Teilnehmer können Soldaten aus diesem Einsatz bewerten.</div>
-                  ) : null}
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {(detail?.participants ?? []).map((p) => {
                       const m = rosterById.get(p.marine_card_id);
@@ -1024,13 +902,8 @@ export default function OpsPanel() {
                         <div key={p.marine_card_id} className="rounded-xl border border-hud-line/60 bg-black/10 p-3">
                           <div className="font-medium">{m ? `${m.rank} • ${m.name}` : p.marine_card_id}</div>
                           <div className="mt-2 flex items-center justify-between gap-2">
-                            <Stars
-                              value={v}
-                              onChange={discordId && viewerIsParticipant ? (n) => rateMarine(p.marine_card_id, n) : undefined}
-                            />
-                            <div className="text-xs text-hud-muted">
-                              {!discordId ? "Login nötig" : viewerIsParticipant ? "klick zum bewerten" : "Nur Teilnehmer"}
-                            </div>
+                            <Stars value={v} onChange={discordId ? (n) => rateMarine(p.marine_card_id, n) : undefined} />
+                            <div className="text-xs text-hud-muted">{discordId ? "klick zum bewerten" : "Login nötig"}</div>
                           </div>
                         </div>
                       );
@@ -1189,25 +1062,6 @@ export default function OpsPanel() {
           )}
         </div>
       )}
-
-  async function leaveSelectedOp() {
-    if (!selected) return;
-    setErr(null);
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/ops/${selected.id}/leave`, { method: "POST" });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j?.error || j?.details || "Leave failed");
-      await loadDetail(selected.id);
-      setToast({ kind: "ok", msg: "Du hast den Einsatz verlassen." });
-    } catch (e: any) {
-      setErr(String(e?.message ?? e));
-      setToast({ kind: "err", msg: String(e?.message ?? e) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
     </div>
   );
 }
