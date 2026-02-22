@@ -33,11 +33,17 @@ function rankIndex(name: string): number {
 
 type TrelloList = { id: string; name: string };
 
+type TrelloCard = { idList?: string; name?: string };
+
 async function fetchJson(url: string) {
   const res = await fetch(url, { cache: "no-store" });
   const text = await res.text();
   let json: any = null;
-  try { json = JSON.parse(text); } catch { /* ignore */ }
+  try {
+    json = JSON.parse(text);
+  } catch {
+    /* ignore */
+  }
   return { res, text, json };
 }
 
@@ -54,7 +60,8 @@ export async function POST(req: Request) {
   const direction = String(body?.direction ?? "").trim(); // promote | demote
 
   if (!cardId) return NextResponse.json({ error: "cardId required" }, { status: 400 });
-  if (!["promote", "demote"].includes(direction)) return NextResponse.json({ error: "direction must be promote|demote" }, { status: 400 });
+  if (!["promote", "demote"].includes(direction))
+    return NextResponse.json({ error: "direction must be promote|demote" }, { status: 400 });
 
   // Permissions
   if (!(isAdmin || isFE || isUO)) return NextResponse.json({ error: "Access denied" }, { status: 403 });
@@ -62,19 +69,28 @@ export async function POST(req: Request) {
   const { key, token } = trelloBaseParams();
   const boardId = requiredEnv("TRELLO_BOARD_ID");
 
-  // Read card current list
+  // Read card current list + name
   const cardUrl = `https://api.trello.com/1/cards/${cardId}?key=${key}&token=${token}&fields=idList,name`;
-  const card = await fetchJson(cardUrl);
-  if (!card.res.ok) return NextResponse.json({ error: "Trello card read failed", status: card.res.status, details: card.json ?? card.text }, { status: 500 });
+  const cardResp = await fetchJson(cardUrl);
+  if (!cardResp.res.ok)
+    return NextResponse.json(
+      { error: "Trello card read failed", status: cardResp.res.status, details: cardResp.json ?? cardResp.text },
+      { status: 500 }
+    );
 
-  const fromListId = String(card.json?.idList ?? "");
-  const cardName = String(card.json?.name ?? "").trim() || "Unbekannt";
+  const card = (cardResp.json ?? {}) as TrelloCard;
+  const fromListId = String(card.idList ?? "");
+  const cardName = String(card.name ?? "Unbekannt");
   if (!fromListId) return NextResponse.json({ error: "Cannot resolve current list" }, { status: 500 });
 
   // Get all lists on board
   const listsUrl = `https://api.trello.com/1/boards/${boardId}/lists?key=${key}&token=${token}&fields=name`;
   const listsResp = await fetchJson(listsUrl);
-  if (!listsResp.res.ok) return NextResponse.json({ error: "Trello lists read failed", status: listsResp.res.status, details: listsResp.json ?? listsResp.text }, { status: 500 });
+  if (!listsResp.res.ok)
+    return NextResponse.json(
+      { error: "Trello lists read failed", status: listsResp.res.status, details: listsResp.json ?? listsResp.text },
+      { status: 500 }
+    );
 
   const lists = (Array.isArray(listsResp.json) ? listsResp.json : []) as TrelloList[];
   const ranked = lists
@@ -84,9 +100,11 @@ export async function POST(req: Request) {
 
   const from = ranked.find((l) => l.id === fromListId);
   if (!from) {
-    // If current list is not a rank list, we can't compute next.
     return NextResponse.json(
-      { error: "Ziel Rang nicht gefunden", details: "Aktuelle Trello-Liste ist kein Rang (Name enthält keinen bekannten Rang)." },
+      {
+        error: "Ziel Rang nicht gefunden",
+        details: "Aktuelle Trello-Liste ist kein Rang (Name enthält keinen bekannten Rang).",
+      },
       { status: 400 }
     );
   }
@@ -97,16 +115,24 @@ export async function POST(req: Request) {
 
   // UO limitation: only Rekrut -> PFC
   if (isUO && !(isAdmin || isFE)) {
-    const ok = from.idx === rankOrder.indexOf("private rekrut") && targetIdx === rankOrder.indexOf("private first class");
+    const ok =
+      from.idx === rankOrder.indexOf("private rekrut") &&
+      targetIdx === rankOrder.indexOf("private first class");
     if (!ok) {
-      return NextResponse.json({ error: "UO darf nur Private Rekrut → Private First Class befördern." }, { status: 403 });
+      return NextResponse.json(
+        { error: "UO darf nur Private Rekrut → Private First Class befördern." },
+        { status: 403 }
+      );
     }
   }
 
   const to = ranked.find((l) => l.idx === targetIdx);
   if (!to) {
     return NextResponse.json(
-      { error: "Ziel Rang nicht gefunden", details: `Kein Trello-Listeneintrag für Rangindex ${targetIdx}. Prüfe Listen-Namen/Existenz.` },
+      {
+        error: "Ziel Rang nicht gefunden",
+        details: `Kein Trello-Listeneintrag für Rangindex ${targetIdx}. Prüfe Listen-Namen/Existenz.`,
+      },
       { status: 400 }
     );
   }
@@ -124,10 +150,17 @@ export async function POST(req: Request) {
 
   const moveText = await moveRes.text();
   let moveJson: any = null;
-  try { moveJson = JSON.parse(moveText); } catch { /* ignore */ }
+  try {
+    moveJson = JSON.parse(moveText);
+  } catch {
+    /* ignore */
+  }
 
   if (!moveRes.ok) {
-    return NextResponse.json({ error: "Trello move failed", status: moveRes.status, details: moveJson ?? moveText }, { status: 500 });
+    return NextResponse.json(
+      { error: "Trello move failed", status: moveRes.status, details: moveJson ?? moveText },
+      { status: 500 }
+    );
   }
 
   // Discord webhook (best-effort)
@@ -135,8 +168,13 @@ export async function POST(req: Request) {
     name: cardName,
     oldRank: from.name,
     newRank: to.name,
-    direction: direction as "promote" | "demote",
+    actor: gate.session?.name || gate.session?.discordId,
   });
 
-  return NextResponse.json({ ok: true, moved: true, from: { id: from.id, name: from.name }, to: { id: to.id, name: to.name } });
+  return NextResponse.json({
+    ok: true,
+    moved: true,
+    from: { id: from.id, name: from.name },
+    to: { id: to.id, name: to.name },
+  });
 }

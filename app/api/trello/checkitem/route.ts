@@ -3,23 +3,35 @@ import { requireSignedIn } from "@/lib/authz";
 import { trelloBaseParams } from "../../_lib/trello";
 import { sendDiscordMedalEmbed, sendDiscordTrainingEmbed } from "../../_lib/discord";
 
-const norm = (s: string) => (s ?? "").trim().toLowerCase();
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-function classifyChecklist(name: string): "trainings" | "medals" {
-  const n = norm(name);
-  if (n.includes("med") || n.includes("orden") || n.includes("award") || n.includes("auszeichnung")) return "medals";
-  return "trainings";
+async function fetchJson(url: string) {
+  const res = await fetch(url, { cache: "no-store" });
+  const text = await res.text();
+  let json: any = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    /* ignore */
+  }
+  return { res, text, json };
 }
 
-type ChecklistItem = { id: string; name: string; state: "complete" | "incomplete" };
-type TrelloChecklist = { id: string; name: string; checkItems: ChecklistItem[] };
-type TrelloCard = { id: string; name: string; checklists?: TrelloChecklist[] };
+function norm(s: string) {
+  return (s ?? "").toLowerCase().trim();
+}
+
+function looksLikeMedal(checklistName: string, itemName: string) {
+  const n = `${checklistName} ${itemName}`.toLowerCase();
+  return n.includes("medaille") || n.includes("medal") || n.includes("orden") || n.includes("award");
+}
 
 export async function POST(req: Request) {
   const gate = await requireSignedIn(req);
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
-  const canToggle = !!(gate.session?.canSeeFE || gate.session?.canSeeUO);
+  const canToggle = !!(gate.session?.canSeeFE || gate.session?.canSeeUO || gate.session?.isAdmin);
   if (!canToggle) return NextResponse.json({ error: "Access denied" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
@@ -32,77 +44,80 @@ export async function POST(req: Request) {
   }
 
   const { key, token } = trelloBaseParams();
-  const url = new URL(`https://api.trello.com/1/cards/${cardId}/checkItem/${checkItemId}`);
-  url.searchParams.set("key", key);
-  url.searchParams.set("token", token);
-  url.searchParams.set("state", state);
 
-  const res = await fetch(url.toString(), { method: "PUT" });
-  const text = await res.text();
-  if (!res.ok) {
-    return NextResponse.json({ error: "Trello update failed", status: res.status, details: text }, { status: 500 });
+  // 1) Toggle checkitem state
+  const putUrl = new URL(`https://api.trello.com/1/cards/${cardId}/checkItem/${checkItemId}`);
+  putUrl.searchParams.set("key", key);
+  putUrl.searchParams.set("token", token);
+  putUrl.searchParams.set("state", state);
+
+  const putRes = await fetch(putUrl.toString(), { method: "PUT" });
+  const putText = await putRes.text();
+  let putJson: any = null;
+  try {
+    putJson = JSON.parse(putText);
+  } catch {
+    /* ignore */
   }
 
-  // Discord webhook (best-effort)
-  try {
-    // Resolve card + check item name
-    const cardUrl = new URL(`https://api.trello.com/1/cards/${cardId}`);
-    cardUrl.searchParams.set("key", key);
-    cardUrl.searchParams.set("token", token);
-    cardUrl.searchParams.set("fields", "name");
-    cardUrl.searchParams.set("checklists", "all");
-    cardUrl.searchParams.set("checklist_fields", "name,checkItems");
-    cardUrl.searchParams.set("checkItem_fields", "name,state");
+  if (!putRes.ok) {
+    return NextResponse.json(
+      { error: "Trello update failed", status: putRes.status, details: putJson ?? putText },
+      { status: 500 }
+    );
+  }
 
-    const cardRes = await fetch(cardUrl.toString(), { cache: "no-store" });
-    const cardText = await cardRes.text();
-    let cardJson: any = null;
-    try {
-      cardJson = JSON.parse(cardText);
-    } catch {
-      cardJson = null;
+  // 2) Resolve names for embed (best-effort)
+  const actor = gate.session?.name || gate.session?.discordId || "Unbekannt";
+
+  // Card name (trainee/recipient)
+  let cardName = "Unbekannt";
+  const cardInfoUrl = `https://api.trello.com/1/cards/${cardId}?key=${key}&token=${token}&fields=name`;
+  const cardInfo = await fetchJson(cardInfoUrl);
+  if (cardInfo.res.ok) cardName = String(cardInfo.json?.name ?? cardName);
+
+  // CheckItem name + checklist
+  let itemName = "Unbekannt";
+  let checklistId = "";
+  if (putJson && typeof putJson === "object") {
+    itemName = String(putJson?.name ?? itemName);
+    checklistId = String(putJson?.idChecklist ?? "");
+  }
+
+  // If PUT response didn't contain details, try to fetch item
+  if (itemName === "Unbekannt" || !checklistId) {
+    const itemUrl = `https://api.trello.com/1/cards/${cardId}/checkItem/${checkItemId}?key=${key}&token=${token}`;
+    const itemResp = await fetchJson(itemUrl);
+    if (itemResp.res.ok) {
+      itemName = String(itemResp.json?.name ?? itemName);
+      checklistId = String(itemResp.json?.idChecklist ?? checklistId);
     }
+  }
 
-    if (cardRes.ok && cardJson) {
-      const card = cardJson as TrelloCard;
-      const traineeName = String(card?.name ?? "").trim() || "Unbekannt";
+  let checklistName = "";
+  if (checklistId) {
+    const clUrl = `https://api.trello.com/1/checklists/${checklistId}?key=${key}&token=${token}&fields=name`;
+    const clResp = await fetchJson(clUrl);
+    if (clResp.res.ok) checklistName = String(clResp.json?.name ?? "");
+  }
 
-      let checklistName = "";
-      let itemName = "";
+  const isMedal = looksLikeMedal(checklistName, itemName);
 
-      for (const cl of (card.checklists ?? []) as any[]) {
-        const items = Array.isArray(cl?.checkItems) ? cl.checkItems : [];
-        const found = items.find((it: any) => String(it?.id ?? "") === checkItemId);
-        if (found) {
-          checklistName = String(cl?.name ?? "");
-          itemName = String(found?.name ?? "");
-          break;
-        }
-      }
-
-      const actorPretty = gate.session?.name?.trim() || (gate.session?.discordId ? `<@${gate.session.discordId}>` : "Unbekannt");
-
-      const bucket = classifyChecklist(checklistName);
-      const isComplete = state === "complete";
-
-      if (bucket === "medals") {
-        await sendDiscordMedalEmbed({
-          action: isComplete ? "awarded" : "reverted",
-          medalName: itemName || "Unbekannt",
-          giverName: actorPretty,
-          receiverName: traineeName,
-        });
-      } else {
-        await sendDiscordTrainingEmbed({
-          action: isComplete ? "completed" : "reverted",
-          trainingName: itemName || "Unbekannt",
-          instructorName: actorPretty,
-          traineeName,
-        });
-      }
-    }
-  } catch {
-    // ignore
+  // 3) Send Discord embed (best-effort)
+  if (isMedal) {
+    await sendDiscordMedalEmbed({
+      action: state === "complete" ? "awarded" : "revoked",
+      medalName: itemName,
+      actor,
+      recipient: cardName,
+    });
+  } else {
+    await sendDiscordTrainingEmbed({
+      action: state === "complete" ? "completed" : "reverted",
+      trainingName: itemName,
+      instructor: actor,
+      trainee: cardName,
+    });
   }
 
   return NextResponse.json({ ok: true });
