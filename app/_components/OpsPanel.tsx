@@ -261,13 +261,35 @@ export default function OpsPanel() {
     return (detail?.participants ?? []).some((p) => p.marine_card_id === card);
   }, [detail?.participants, myMemberCardId]);
 
+  const isOpOver = useMemo(() => {
+    if (!selected) return false;
+    if (!selected.end_at) return false;
+    const d = new Date(selected.end_at);
+    if (Number.isNaN(d.getTime())) return false;
+    return Date.now() >= d.getTime();
+  }, [selected]);
+
+  const viewerIsParticipant = useMemo(() => {
+    const card = String(myMemberCardId ?? "").trim();
+    if (!card) return false;
+    return (detail?.participants ?? []).some((p) => p.marine_card_id === card);
+  }, [myMemberCardId, detail?.participants]);
+
   const viewerCanJoin = useMemo(() => {
     if (!discordId) return false;
     const card = String(myMemberCardId ?? "").trim();
     if (!card) return false;
     if (!selected) return false;
+    if (isOpOver) return false;
     return !(detail?.participants ?? []).some((p) => p.marine_card_id === card);
-  }, [discordId, myMemberCardId, selected, detail?.participants]);
+  }, [discordId, myMemberCardId, selected, detail?.participants, isOpOver]);
+
+  const viewerCanLeave = useMemo(() => {
+    if (!discordId) return false;
+    if (!selected) return false;
+    if (isOpOver) return false;
+    return viewerIsParticipant;
+  }, [discordId, selected, isOpOver, viewerIsParticipant]);
 
   async function joinSelectedOp() {
     if (!selected) return;
@@ -913,15 +935,30 @@ export default function OpsPanel() {
                           <>Login nötig, um beizutreten.</>
                         )}
                       </div>
-                      <button
-                        className={"btn btn-ghost"}
-                        type="button"
-                        onClick={joinSelectedOp}
-                        disabled={!viewerCanJoin || busy}
-                        title={viewerCanJoin ? "Einsatz beitreten" : "Nicht möglich"}
-                      >
-                        Einsatz beitreten
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {viewerIsParticipant ? (
+                          <button
+                            className={"btn btn-ghost"}
+                            type="button"
+                            onClick={leaveSelectedOp}
+                            disabled={!viewerCanLeave || busy}
+                            title={viewerCanLeave ? "Einsatz verlassen" : isOpOver ? "Einsatz vorbei" : "Nicht möglich"}
+                          >
+                            Einsatz verlassen
+                          </button>
+                        ) : (
+                          <button
+                            className={"btn btn-ghost"}
+                            type="button"
+                            onClick={joinSelectedOp}
+                            disabled={!viewerCanJoin || busy}
+                            title={viewerCanJoin ? "Einsatz beitreten" : isOpOver ? "Einsatz vorbei" : "Nicht möglich"}
+                          >
+                            Einsatz beitreten
+                          </button>
+                        )}
+                        {isOpOver ? <span className="text-xs text-hud-muted">Beitritt deaktiviert (Einsatz vorbei).</span> : null}
+                      </div>
                     </div>
                     <div className="mt-3 space-y-2">
                       {(detail?.participants ?? []).map((p) => {
@@ -1152,6 +1189,25 @@ export default function OpsPanel() {
           )}
         </div>
       )}
+
+  async function leaveSelectedOp() {
+    if (!selected) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/ops/${selected.id}/leave`, { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || j?.details || "Leave failed");
+      await loadDetail(selected.id);
+      setToast({ kind: "ok", msg: "Du hast den Einsatz verlassen." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
     </div>
   );
 }

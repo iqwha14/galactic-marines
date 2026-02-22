@@ -12,6 +12,10 @@ export const dynamic = "force-dynamic";
  * Returns:
  * - summary per marine_card_id (avg, count)
  * - all entries (who rated whom in which op)
+ *
+ * IMPORTANT:
+ * Rater display names are resolved from gm_unit_members (not gm_user_permissions),
+ * so the names align with the "unit ids" mapping.
  */
 export async function GET(req: Request) {
   const gate = await requireFE(req);
@@ -19,10 +23,10 @@ export async function GET(req: Request) {
 
   const sb = supabaseServer();
 
-  // Enrich rater names from permissions table (optional).
+  // Enrich rater names from unit membership table.
   // Enrich marine names from Trello card ids so the overview can show names even if the client hasn't loaded the roster yet.
-  const [{ data: perms }, marineNameByCardId] = await Promise.all([
-    sb.from("gm_user_permissions").select("discord_id, display_name"),
+  const [{ data: unitMembers }, marineNameByCardId] = await Promise.all([
+    sb.from("gm_unit_members").select("discord_id, display_name"),
     (async () => {
       try {
         const boardId = requiredEnv("TRELLO_BOARD_ID");
@@ -43,7 +47,7 @@ export async function GET(req: Request) {
   ]);
 
   const raterNameByDiscordId = new Map<string, string>();
-  for (const p of perms ?? []) {
+  for (const p of unitMembers ?? []) {
     const id = String((p as any).discord_id ?? "").trim();
     if (!id) continue;
     const name = String((p as any).display_name ?? "").trim();

@@ -33,13 +33,8 @@ const RANKS: RankDef[] = [
     ],
   },
   {
-    key: "private",
-    order: 1,
-    aliases: ["private", "pvt", "pvt."],
-  },
-  {
     key: "private_first_class",
-    order: 2,
+    order: 1,
     aliases: [
       "private first class",
       "private 1st class",
@@ -51,22 +46,22 @@ const RANKS: RankDef[] = [
       "private firstclass",
     ],
   },
-  { key: "lance_corporal", order: 3, aliases: ["lance corporal", "lance cpl", "lcpl", "l/cpl"] },
-  { key: "corporal", order: 4, aliases: ["corporal", "cpl", "kpl", "korporal"] },
-  { key: "sergeant", order: 5, aliases: ["sergeant", "sgt", "sgt.", "srg"] },
-  { key: "staff_sergeant", order: 6, aliases: ["staff sergeant", "staff sgt", "ssgt", "ssgt."] },
-  { key: "sergeant_major", order: 7, aliases: ["sergeant major", "sgt major", "sgt. major", "sgmaj", "sg maj"] },
+  { key: "lance_corporal", order: 2, aliases: ["lance corporal", "lance cpl", "lcpl", "l/cpl"] },
+  { key: "corporal", order: 3, aliases: ["corporal", "cpl", "kpl", "korporal"] },
+  { key: "sergeant", order: 4, aliases: ["sergeant", "sgt", "sgt.", "srg"] },
+  { key: "staff_sergeant", order: 5, aliases: ["staff sergeant", "staff sgt", "ssgt", "ssgt."] },
+  { key: "sergeant_major", order: 6, aliases: ["sergeant major", "sgt major", "sgt. major", "sgmaj", "sg maj"] },
 
   // Officers
-  { key: "lieutenant", order: 8, aliases: ["lieutenant", "lt", "lt.", "leutnant"] },
+  { key: "lieutenant", order: 7, aliases: ["lieutenant", "lt", "lt.", "leutnant"] },
   {
     key: "first_lieutenant",
-    order: 9,
+    order: 8,
     aliases: ["first lieutenant", "1st lieutenant", "1st lt", "1st lt.", "1. lt", "1. lt."],
   },
-  { key: "captain", order: 10, aliases: ["captain", "capt", "cpt", "cpt.", "hauptmann"] },
-  { key: "major", order: 11, aliases: ["major", "maj", "maj."] },
-  { key: "commander", order: 12, aliases: ["commander", "cmdr", "cmdr.", "kommandeur"] },
+  { key: "captain", order: 9, aliases: ["captain", "capt", "cpt", "cpt.", "hauptmann"] },
+  { key: "major", order: 10, aliases: ["major", "maj", "maj."] },
+  { key: "commander", order: 11, aliases: ["commander", "cmdr", "cmdr.", "kommandeur"] },
 ];
 
 function resolveRank(listName: string): RankDef | null {
