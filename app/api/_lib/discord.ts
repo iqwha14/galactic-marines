@@ -1,7 +1,11 @@
 /**
  * Discord Webhook helper (Embeds)
  *
- * If DISCORD_WEBHOOK_URL is not set, functions are no-ops.
+ * Webhooks:
+ *  - DISCORD_WEBHOOK_URL: Promotions/Degradierungen
+ *  - DISCORD_WEBHOOK_TRAINING_URL: Fortbildungen & Medaillen
+ *
+ * If a webhook URL is not set, corresponding functions are no-ops.
  */
 
 type EmbedField = { name: string; value: string; inline?: boolean };
@@ -14,10 +18,8 @@ type Embed = {
   timestamp?: string;
 };
 
-async function postEmbeds(embeds: Embed[]) {
-  const url = process.env.DISCORD_WEBHOOK_URL;
+async function postEmbedsTo(url: string | undefined, embeds: Embed[]) {
   if (!url) return;
-
   try {
     await fetch(url, {
       method: "POST",
@@ -25,7 +27,7 @@ async function postEmbeds(embeds: Embed[]) {
       body: JSON.stringify({ embeds }),
     });
   } catch {
-    // intentionally swallow webhook failures; core actions must still succeed
+    // Best-effort: webhook failures must never block core actions
   }
 }
 
@@ -39,12 +41,14 @@ function safe(v: any, fallback = "Unbekannt") {
 }
 
 export async function sendDiscordPromotionEmbed(params: {
+  kind: "promotion" | "demotion";
   name: string;
   oldRank: string;
   newRank: string;
   actor?: string; // who clicked
+  timestamp?: string; // optional ISO
 }) {
-  const isPromotion = params.newRank !== params.oldRank;
+  const isPromotion = params.kind === "promotion";
 
   const embed: Embed = {
     title: isPromotion ? "⬆️ Beförderung" : "⬇️ Degradierung",
@@ -54,14 +58,14 @@ export async function sendDiscordPromotionEmbed(params: {
       { name: "Alter Rang", value: safe(params.oldRank), inline: true },
       { name: "Neuer Rang", value: safe(params.newRank), inline: true },
     ],
-    timestamp: isoNow(),
+    timestamp: params.timestamp ?? isoNow(),
   };
 
   if (params.actor) {
     embed.fields = [{ name: "Von", value: safe(params.actor), inline: false }, ...(embed.fields ?? [])];
   }
 
-  await postEmbeds([embed]);
+  await postEmbedsTo(process.env.DISCORD_WEBHOOK_URL, [embed]);
 }
 
 export async function sendDiscordTrainingEmbed(params: {
@@ -69,6 +73,7 @@ export async function sendDiscordTrainingEmbed(params: {
   trainingName: string;
   instructor: string; // actor
   trainee: string; // card name
+  timestamp?: string;
 }) {
   const completed = params.action === "completed";
   const embed: Embed = {
@@ -79,10 +84,10 @@ export async function sendDiscordTrainingEmbed(params: {
       { name: completed ? "Ausbilder" : "Von wem", value: safe(params.instructor), inline: true },
       { name: completed ? "Trainee" : "Bei wem", value: safe(params.trainee), inline: true },
     ],
-    timestamp: isoNow(),
+    timestamp: params.timestamp ?? isoNow(),
   };
 
-  await postEmbeds([embed]);
+  await postEmbedsTo(process.env.DISCORD_WEBHOOK_TRAINING_URL, [embed]);
 }
 
 export async function sendDiscordMedalEmbed(params: {
@@ -90,6 +95,7 @@ export async function sendDiscordMedalEmbed(params: {
   medalName: string;
   actor: string;
   recipient: string;
+  timestamp?: string;
 }) {
   const awarded = params.action === "awarded";
   const embed: Embed = {
@@ -97,11 +103,11 @@ export async function sendDiscordMedalEmbed(params: {
     color: awarded ? 0x9b59b6 : 0xf1c40f,
     fields: [
       { name: "Medaille", value: safe(params.medalName), inline: false },
-      { name: awarded ? "Von wem" : "Von wem", value: safe(params.actor), inline: true },
+      { name: "Von wem", value: safe(params.actor), inline: true },
       { name: awarded ? "An" : "Bei wem", value: safe(params.recipient), inline: true },
     ],
-    timestamp: isoNow(),
+    timestamp: params.timestamp ?? isoNow(),
   };
 
-  await postEmbeds([embed]);
+  await postEmbedsTo(process.env.DISCORD_WEBHOOK_TRAINING_URL, [embed]);
 }

@@ -6,29 +6,64 @@ import { sendDiscordPromotionEmbed } from "../../_lib/discord";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const norm = (s: string) => (s ?? "").trim().toLowerCase();
+const norm = (s: string) =>
+  (s ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
-/** Commander oben, Rekrut unten */
-const rankOrder = [
-  "commander",
-  "major",
-  "captain",
-  "first lieutenant",
-  "lieutenant",
-  "sergeant major",
-  "staff sergeant",
-  "sergeant",
-  "corporal",
-  "lance corporal",
-  "private first class",
-  "private rekrut",
+type RankDef = { key: string; order: number; aliases: string[] };
+
+// Lowest -> Highest
+const RANKS: RankDef[] = [
+  { key: "private_rekrut", order: 0, aliases: ["private rekrut", "rekrut", "recruit"] },
+  { key: "private", order: 1, aliases: ["private"] },
+  {
+    key: "private_first_class",
+    order: 2,
+    aliases: ["private first class", "pfc", "private 1st class"],
+  },
+  { key: "lance_corporal", order: 3, aliases: ["lance corporal", "lcpl", "lance cpl"] },
+  { key: "corporal", order: 4, aliases: ["corporal", "cpl"] },
+  { key: "sergeant", order: 5, aliases: ["sergeant", "sgt"] },
+  { key: "staff_sergeant", order: 6, aliases: ["staff sergeant", "ssgt", "staff sgt"] },
+  { key: "sergeant_major", order: 7, aliases: ["sergeant major", "sgt major"] },
+
+  // Officers
+  { key: "lieutenant", order: 8, aliases: ["lieutenant", "lt"] },
+  { key: "first_lieutenant", order: 9, aliases: ["first lieutenant", "1st lieutenant", "1st lt"] },
+  { key: "captain", order: 10, aliases: ["captain", "cpt", "capt"] },
+  { key: "major", order: 11, aliases: ["major", "maj"] },
+  { key: "commander", order: 12, aliases: ["commander", "cmdr"] },
 ];
 
-function rankIndex(name: string): number {
-  const r = norm(name);
-  for (let i = 0; i < rankOrder.length; i++) if (r.includes(rankOrder[i])) return i;
-  if (r.includes("private") || r.includes("rekrut")) return 10_000;
-  return 5_000;
+function resolveRank(listName: string): RankDef | null {
+  const n = norm(listName);
+  if (!n) return null;
+
+  // 1) Exact matches first
+  for (const r of RANKS) {
+    for (const a of r.aliases) {
+      if (n === norm(a)) return r;
+    }
+  }
+
+  // 2) Word-boundary contains, preferring the LONGEST alias (prevents Major matching Sergeant Major)
+  let best: { r: RankDef; len: number } | null = null;
+  for (const r of RANKS) {
+    for (const a of r.aliases) {
+      const an = norm(a);
+      if (!an) continue;
+      const re = new RegExp(`(^|\\s)${an.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}(\\s|$)`);
+      if (re.test(n)) {
+        const len = an.length;
+        if (!best || len > best.len) best = { r, len };
+      }
+    }
+  }
+
+  return best?.r ?? null;
 }
 
 type TrelloList = { id: string; name: string };
@@ -60,8 +95,9 @@ export async function POST(req: Request) {
   const direction = String(body?.direction ?? "").trim(); // promote | demote
 
   if (!cardId) return NextResponse.json({ error: "cardId required" }, { status: 400 });
-  if (!["promote", "demote"].includes(direction))
+  if (!['promote', 'demote'].includes(direction)) {
     return NextResponse.json({ error: "direction must be promote|demote" }, { status: 400 });
+  }
 
   // Permissions
   if (!(isAdmin || isFE || isUO)) return NextResponse.json({ error: "Access denied" }, { status: 403 });
@@ -72,11 +108,12 @@ export async function POST(req: Request) {
   // Read card current list + name
   const cardUrl = `https://api.trello.com/1/cards/${cardId}?key=${key}&token=${token}&fields=idList,name`;
   const cardResp = await fetchJson(cardUrl);
-  if (!cardResp.res.ok)
+  if (!cardResp.res.ok) {
     return NextResponse.json(
       { error: "Trello card read failed", status: cardResp.res.status, details: cardResp.json ?? cardResp.text },
       { status: 500 }
     );
+  }
 
   const card = (cardResp.json ?? {}) as TrelloCard;
   const fromListId = String(card.idList ?? "");
@@ -86,38 +123,46 @@ export async function POST(req: Request) {
   // Get all lists on board
   const listsUrl = `https://api.trello.com/1/boards/${boardId}/lists?key=${key}&token=${token}&fields=name`;
   const listsResp = await fetchJson(listsUrl);
-  if (!listsResp.res.ok)
+  if (!listsResp.res.ok) {
     return NextResponse.json(
       { error: "Trello lists read failed", status: listsResp.res.status, details: listsResp.json ?? listsResp.text },
       { status: 500 }
     );
+  }
 
   const lists = (Array.isArray(listsResp.json) ? listsResp.json : []) as TrelloList[];
+
   const ranked = lists
-    .map((l) => ({ ...l, idx: rankIndex(l.name) }))
-    .filter((l) => l.idx < 5000) // only lists that look like ranks
-    .sort((a, b) => a.idx - b.idx);
+    .map((l) => {
+      const r = resolveRank(l.name);
+      return r
+        ? {
+            id: l.id,
+            name: l.name,
+            rankKey: r.key,
+            order: r.order,
+          }
+        : null;
+    })
+    .filter(Boolean) as Array<{ id: string; name: string; rankKey: string; order: number }>;
 
   const from = ranked.find((l) => l.id === fromListId);
   if (!from) {
     return NextResponse.json(
       {
         error: "Ziel Rang nicht gefunden",
-        details: "Aktuelle Trello-Liste ist kein Rang (Name enthält keinen bekannten Rang).",
+        details: "Aktuelle Trello-Liste ist kein erkannter Rang. Prüfe den Listen-Namen.",
       },
       { status: 400 }
     );
   }
 
-  // promote = higher rank => smaller index; demote => larger index
-  const delta = direction === "promote" ? -1 : 1;
-  const targetIdx = from.idx + delta;
+  const delta = direction === "promote" ? +1 : -1;
+  const targetOrder = from.order + delta;
 
-  // UO limitation: only Rekrut -> PFC
+  // UO limitation: only Rekrut -> PFC (wie vorher)
   if (isUO && !(isAdmin || isFE)) {
-    const ok =
-      from.idx === rankOrder.indexOf("private rekrut") &&
-      targetIdx === rankOrder.indexOf("private first class");
+    const ok = from.rankKey === "private_rekrut" && targetOrder === RANKS.find((r) => r.key === "private_first_class")?.order;
     if (!ok) {
       return NextResponse.json(
         { error: "UO darf nur Private Rekrut → Private First Class befördern." },
@@ -126,16 +171,21 @@ export async function POST(req: Request) {
     }
   }
 
-  const to = ranked.find((l) => l.idx === targetIdx);
-  if (!to) {
+  // Target list: choose list that resolves exactly to that order.
+  // If multiple (shouldn't happen), prefer exact normalized match with canonical alias.
+  const candidates = ranked.filter((l) => l.order === targetOrder);
+  if (!candidates.length) {
+    const expected = RANKS.find((r) => r.order === targetOrder)?.aliases?.[0] ?? `order ${targetOrder}`;
     return NextResponse.json(
       {
         error: "Ziel Rang nicht gefunden",
-        details: `Kein Trello-Listeneintrag für Rangindex ${targetIdx}. Prüfe Listen-Namen/Existenz.`,
+        details: `Kein Trello-Listeneintrag für Zielrang (${expected}). Prüfe ob die Liste existiert und korrekt benannt ist.`,
       },
       { status: 400 }
     );
   }
+
+  const to = candidates[0];
 
   // Move card
   const moveUrl = `https://api.trello.com/1/cards/${cardId}?key=${key}&token=${token}`;
@@ -165,6 +215,7 @@ export async function POST(req: Request) {
 
   // Discord webhook (best-effort)
   await sendDiscordPromotionEmbed({
+    kind: direction === "promote" ? "promotion" : "demotion",
     name: cardName,
     oldRank: from.name,
     newRank: to.name,
