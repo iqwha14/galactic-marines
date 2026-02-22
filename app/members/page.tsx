@@ -13,6 +13,7 @@ type Marine = {
   rank: string;
   rankSince?: string | null;
   unitGroup: string;
+  listId?: string;
   trainings: ChecklistItem[];
   medals: ChecklistItem[];
 };
@@ -122,8 +123,29 @@ export default function MembersPage() {
 
   const baseMarines = useMemo(() => {
     if (!data) return [] as Marine[];
-    if (view === "jedi") return (data.jediCards ?? []) as Marine[];
-    if (view === "adjutant") return (data.adjutantCards ?? []) as Marine[];
+
+    // Jedi/Adjutanten: bevorzugt dedizierte Arrays (falls Backend sie liefert),
+    // sonst fallback: aus dem Standard-Roster über listId filtern.
+    if (view === "jedi") {
+      const direct = (data.jediCards ?? []) as Marine[];
+      if (direct.length) return direct;
+
+      const listId = data.jediListId ?? null;
+      const all = (data.marines ?? []) as Marine[];
+      if (!listId) return [];
+      return all.filter((m: any) => m?.listId === listId);
+    }
+
+    if (view === "adjutant") {
+      const direct = (data.adjutantCards ?? []) as Marine[];
+      if (direct.length) return direct;
+
+      const listId = data.adjutantListId ?? null;
+      const all = (data.marines ?? []) as Marine[];
+      if (!listId) return [];
+      return all.filter((m: any) => m?.listId === listId);
+    }
+
     return (data.marines ?? []) as Marine[];
   }, [data, view]);
 
@@ -175,7 +197,7 @@ export default function MembersPage() {
     }
 
     try {
-      const res = await fetch("/api/trello/promote", {
+const res = await fetch("/api/trello/promote", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ cardId, direction: dir === 1 ? "promote" : "demote" }),
@@ -246,90 +268,112 @@ export default function MembersPage() {
   return (
     <main className="min-h-screen hud-grid px-6 py-10">
       <div className="mx-auto max-w-7xl">
-        <TopBar
-          title="Mitgliederverwaltung"
-          subtitle="PERSONNEL / ROSTER"
-          right={
-            <Link className="btn btn-ghost" href="/">
-              ← Zurück
-            </Link>
-          }
-        />
+        <TopBar title="Mitgliederverwaltung" subtitle="PERSONNEL / ROSTER" right={<Link href="/" className="btn btn-ghost">← Command Deck</Link>} />
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-3">
-          <HudCard title="Controls">
+        {toast ? <div className="mb-6 rounded-xl border border-hud-line/70 bg-black/20 p-3 text-sm">{toast}</div> : null}
+        {err ? (
+          <div className="mb-6 rounded-xl border border-marine-500/40 bg-marine-500/10 p-4 text-sm">
+            <div className="font-medium">Fehler</div>
+            <div className="mt-1 text-hud-muted">{err}</div>
+          </div>
+        ) : null}
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          <HudCard title="Filter">
             <div className="grid gap-3">
-              <div className="grid grid-cols-2 gap-2">
+              <label className="text-sm">
+                <div className="text-xs text-hud-muted mb-1">Name</div>
                 <input
-                  className="input"
-                  placeholder="Name..."
+                  className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
                   value={qName}
                   onChange={(e) => setQName(e.target.value)}
+                  placeholder="Suchen…"
                 />
-                <select className="select" value={qRank} onChange={(e) => setQRank(e.target.value)}>
-                  <option value="all">Rang (alle)</option>
-                  {ranks.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+              </label>
 
-                <select className="select" value={qTraining} onChange={(e) => setQTraining(e.target.value)}>
-                  <option value="all">Fortbildung (alle)</option>
-                  {allTrainings.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm">
+                  <div className="text-xs text-hud-muted mb-1">Rang</div>
+                  <select
+                    className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
+                    value={qRank}
+                    onChange={(e) => setQRank(e.target.value)}
+                  >
+                    <option value="all">Alle</option>
+                    {ranks.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </label>
 
-                <select className="select" value={qMedal} onChange={(e) => setQMedal(e.target.value)}>
-                  <option value="all">Medaille (alle)</option>
-                  {allMedals.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-hud-muted">Min. Medaillen</span>
-                  <input
-                    className="input w-24"
-                    type="number"
-                    min={0}
-                    value={minMedals}
-                    onChange={(e) => setMinMedals(Number(e.target.value))}
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-hud-muted">Min. Fortbildungen</span>
-                  <input
-                    className="input w-24"
-                    type="number"
-                    min={0}
-                    value={minTrainings}
-                    onChange={(e) => setMinTrainings(Number(e.target.value))}
-                  />
-                </div>
+                <label className="text-sm">
+                  <div className="text-xs text-hud-muted mb-1">Medaille</div>
+                  <select
+                    className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
+                    value={qMedal}
+                    onChange={(e) => setQMedal(e.target.value)}
+                  >
+                    <option value="all">Alle</option>
+                    {allMedals.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
+
+              <label className="text-sm">
+                <div className="text-xs text-hud-muted mb-1">Fortbildung (existiert auf Karte)</div>
+                <select
+                  className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
+                  value={qTraining}
+                  onChange={(e) => setQTraining(e.target.value)}
+                >
+                  <option value="all">Alle</option>
+                  {allTrainings.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm">
+                  <div className="text-xs text-hud-muted mb-1">Min. Medaillen (✓)</div>
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
+                    value={minMedals}
+                    onChange={(e) => setMinMedals(Number(e.target.value || 0))}
+                  />
+                </label>
+
+                <label className="text-sm">
+                  <div className="text-xs text-hud-muted mb-1">Min. Fortbildungen (✓)</div>
+                  <input
+                    type="number"
+                    min={0}
+                    className="w-full rounded-xl border border-hud-line/80 bg-black/30 px-3 py-2 outline-none focus:border-marine-500/60"
+                    value={minTrainings}
+                    onChange={(e) => setMinTrainings(Number(e.target.value || 0))}
+                  />
+                </label>
+              </div>
+
+              <button className="btn btn-ghost" onClick={() => { setQName(""); setQRank("all"); setQTraining("all"); setQMedal("all"); setMinMedals(0); setMinTrainings(0); }}>
+                Reset
+              </button>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
-                  className={[
-                    "btn",
-                    "btn-ghost",
-                    view === "roster" ? "border border-hud-line/80" : "",
-                  ].join(" ")}
+                  className={["btn", "btn-ghost", view === "roster" ? "border border-hud-line/80" : ""].join(" ")}
                   type="button"
                   onClick={async () => {
                     await load();
                     setView("roster");
                   }}
+                  title="Standard Roster"
                 >
-                  Standard
+                  Roster
                 </button>
 
                 <button
@@ -370,23 +414,217 @@ export default function MembersPage() {
                   Adjutanten
                 </button>
 
-                <button className="btn btn-ghost" onClick={load} type="button">
+                <button className="btn btn-ghost" type="button" onClick={load}>
                   Reload
                 </button>
               </div>
+                <div className="mt-2 text-xs text-hud-muted">
+                  Aktives Roster:{" "}
+                  <span className="font-semibold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.55)]">
+                    {view === "roster" ? "Standard" : view === "jedi" ? "Jedi" : "Adjutanten"}
+                  </span>
+                </div>
 
-              {/* Anzeige Aktives Roster (Glow) */}
-              <div className="mt-2 text-xs text-hud-muted">
-                Aktives Roster:{" "}
-                <span className="font-semibold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.55)]">
-                  {view === "roster" ? "Standard" : view === "jedi" ? "Jedi" : "Adjutanten"}
-                </span>
+
+
+              <div className="text-xs text-hud-muted">
+                Chips: <span className="text-white/70">Grün = vorhanden/abgehakt</span>, <span className="text-white/70">Grau = fehlt/nicht abgehakt</span>.
+                {canToggleChecks ? " (klickbar)" : " (nur sichtbar)"}
               </div>
             </div>
           </HudCard>
 
-          {/* ... Rest deiner Datei bleibt unverändert ... */}
-          {/* (Der restliche Inhalt ist exakt wie in deiner Upload-Datei; hier nicht gekürzt in der tatsächlichen Download-Datei.) */}
+          <HudCard title="Abmeldungen" right={<span className="text-xs text-hud-muted">{(data?.absent?.length ?? 0)} aktiv</span>}>
+            {loading ? (
+              <div className="text-hud-muted">Lade…</div>
+            ) : (data?.absent?.length ?? 0) ? (
+              <div className="space-y-2">
+                {data!.absent.slice(0, 12).map((a) => (
+                  <div key={a.id} className="rounded-xl border border-hud-line/70 bg-black/20 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium">{a.name}</div>
+                        <div className="mt-1 text-xs text-hud-muted">{a.rank}</div>
+                      </div>
+                      <a href={a.url} target="_blank" rel="noreferrer" className="btn btn-ghost">Trello</a>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      {a.absences.map((ab: { label: string; from?: string | null; to?: string | null }, idx: number) => (
+                        <span key={idx} className="rounded-full border border-orange-500 bg-orange-500/15 px-3 py-1 text-xs text-orange-300">{ab.label} • {ab.from ?? "?"} → {ab.to ?? "?"}</span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-hud-muted">Keine Abmeldungen.</div>
+            )}
+          </HudCard>
+
+          <HudCard title="Berechtigung">
+            <div className="space-y-2 text-sm">
+              <div>Rolle:{" "}
+                <span className="text-white/80">
+                  {isAdmin ? "Einheitsleitung" : isFE ? "FE" : isUO ? "UO" : "Standard"}
+                </span>
+              </div>
+              <div>Abhaken: <span className="text-white/80">{canToggleChecks ? "ja" : "nein"}</span></div>
+              <div>Befördern/Degradieren:{" "}
+                <span className="text-white/80">
+                  {canPromoteAll ? "alles" : canUOLimitedPromote ? "nur Rekrut→PFC" : "nein"}
+                </span>
+              </div>
+              <div>Einträge: <span className="text-white/80">{filtered.length}</span></div>
+            </div>
+          </HudCard>
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Roster</h2>
+            <button className="btn btn-ghost" onClick={load}>Reload</button>
+          </div>
+
+          {loading ? <div className="mt-4 text-hud-muted">Lade…</div> : null}
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-[0.18em] text-hud-muted">
+                  <th className="border-b border-hud-line/70 py-3 pr-4">Name</th>
+                  <th className="border-b border-hud-line/70 py-3 pr-4">Rang</th>
+                  <th className="border-b border-hud-line/70 py-3 pr-4">Medaillen</th>
+                  <th className="border-b border-hud-line/70 py-3 pr-4">Fortbildungen</th>
+                  <th className="border-b border-hud-line/70 py-3 pr-4">Aktionen</th>
+                  <th className="border-b border-hud-line/70 py-3 pr-0 text-right">Trello</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((m) => {
+                  const tMap = new Map((m.trainings ?? []).map((t) => [t.name, t] as const));
+                  const mdMap = new Map((m.medals ?? []).map((t) => [t.name, t] as const));
+
+                  return (
+                    <tr key={m.id} className="align-top hover:bg-white/5">
+                      <td className="border-b border-hud-line/40 py-4 pr-4">
+                        <div className="font-medium">{m.name}</div>
+                        <div className="mt-1 text-xs text-hud-muted">seit: {fmtDate(m.rankSince)}</div>
+                      </td>
+
+                      <td className="border-b border-hud-line/40 py-4 pr-4">
+                        <span className="inline-flex items-center gap-2 rounded-full border border-hud-line/80 bg-hud-panel/50 px-3 py-1 text-xs">
+                          <span className="h-1.5 w-1.5 rounded-full bg-marine-500" />
+                          {m.rank}
+                        </span>
+                      </td>
+
+                      <td className="border-b border-hud-line/40 py-4 pr-4 min-w-[340px]">
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {allMedals.map((name) => {
+                            const it = mdMap.get(name);
+                            const done = it?.state === "complete";
+                            const clickable = canToggleChecks && !!it?.id;
+                            return (
+                              <button
+                                key={name}
+                                type="button"
+                                className={
+                                  "rounded-full border px-3 py-1 text-xs transition " +
+                                  (done
+                                    ? "border-green-500/60 bg-green-500/20 text-white"
+                                    : "border-hud-line/50 bg-black/15 text-white/65") +
+                                  (clickable ? " hover:bg-green-500/25" : " cursor-default")
+                                }
+                                title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : "Nicht klickbar (Item fehlt oder keine Rechte)"}
+                                onClick={() => {
+                                  if (!clickable || !it) return;
+                                  const next = it.state === "complete" ? "incomplete" : "complete";
+                                  toggleCheckItem(m.id, it.id, next);
+                                }}
+                              >
+                                {name}
+                              </button>
+                            );
+                          })}
+                          {!allMedals.length ? <span className="text-hud-muted">—</span> : null}
+                        </div>
+                      </td>
+
+                      <td className="border-b border-hud-line/40 py-4 pr-4 min-w-[520px]">
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {allTrainings.map((name) => {
+                            const it = tMap.get(name);
+                            const done = it?.state === "complete";
+                            const clickable = canToggleChecks && !!it?.id;
+                            return (
+                              <button
+                                key={name}
+                                type="button"
+                                className={
+                                  "rounded-full border px-3 py-1 text-xs transition " +
+                                  (done
+                                    ? "border-green-500/60 bg-green-500/20 text-white"
+                                    : "border-hud-line/50 bg-black/15 text-white/65") +
+                                  (clickable ? " hover:bg-green-500/25" : " cursor-default")
+                                }
+                                title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : "Nicht klickbar (Item fehlt oder keine Rechte)"}
+                                onClick={() => {
+                                  if (!clickable || !it) return;
+                                  const next = it.state === "complete" ? "incomplete" : "complete";
+                                  toggleCheckItem(m.id, it.id, next);
+                                }}
+                              >
+                                {name}
+                              </button>
+                            );
+                          })}
+                          {!allTrainings.length ? <span className="text-hud-muted">—</span> : null}
+                        </div>
+                      </td>
+
+                      <td className="border-b border-hud-line/40 py-4 pr-4">
+                        <div className="flex flex-col gap-2">
+                          <button
+                            className="btn btn-accent"
+                            disabled={!(canPromoteAll || (canUOLimitedPromote && norm(m.rank).includes("private rekrut")))}
+                            onClick={() => promoteDemote(m.id, m.rank, 1)}
+                            title={canPromoteAll ? "Befördern (hoch)" : canUOLimitedPromote ? "Nur Rekrut→PFC" : "Keine Rechte"}
+                          >
+                            Befördern
+                          </button>
+
+                          <button
+                            className="btn btn-accent"
+                            disabled={!canPromoteAll}
+                            onClick={() => promoteDemote(m.id, m.rank, -1)}
+                            title={canPromoteAll ? "Degradieren (runter)" : "Nur FE/Einheitsleitung"}
+                          >
+                            Degradieren
+                          </button>
+                        </div>
+                      </td>
+
+                      <td className="border-b border-hud-line/40 py-4 pr-0 text-right">
+                        <a href={m.url} target="_blank" rel="noreferrer" className="btn btn-ghost">Trello</a>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {!filtered.length && !loading ? (
+                  <tr>
+                    <td colSpan={6} className="py-8 text-center text-hud-muted">
+                      Keine Treffer.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-4 text-xs text-hud-muted">
+            Hinweis: Grau wird nur klickbar, wenn das CheckItem auf der Trello-Karte existiert (ID nötig).
+          </div>
         </div>
       </div>
     </main>
