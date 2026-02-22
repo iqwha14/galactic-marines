@@ -409,13 +409,27 @@ const showErr = (msg: string) => setToast({ msg, kind: "err" });
   <div
     data-testid="gm-toast"
     className={[
-      "fixed left-1/2 top-6 z-[9999] -translate-x-1/2 rounded-2xl border px-4 py-3 text-sm shadow-hud",
+      "fixed top-6 right-6 z-[9999] rounded-2xl border px-4 py-3 text-sm shadow-hud",
+      "max-w-[min(420px,calc(100vw-48px))]",
+      "animate-[gmToastIn_.18s_ease-out]",
       toast.kind === "ok"
         ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
         : "border-rose-400/40 bg-rose-500/10 text-rose-100",
     ].join(" ")}
   >
     {toast.msg}
+    <style jsx>{`
+      @keyframes gmToastIn {
+        from {
+          opacity: 0;
+          transform: translateY(-6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+    `}</style>
   </div>
 ) : null}
       <header className="mb-8">
