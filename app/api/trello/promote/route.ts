@@ -17,25 +17,56 @@ type RankDef = { key: string; order: number; aliases: string[] };
 
 // Lowest -> Highest
 const RANKS: RankDef[] = [
-  { key: "private_rekrut", order: 0, aliases: ["private rekrut", "rekrut", "recruit"] },
-  { key: "private", order: 1, aliases: ["private"] },
+  // Enlisted
+  {
+    key: "private_rekrut",
+    order: 0,
+    aliases: [
+      "private rekrut",
+      "pvt rekrut",
+      "pvt. rekrut",
+      "pr",
+      "rekrut",
+      "rek",
+      "recruit",
+      "recr",
+    ],
+  },
+  {
+    key: "private",
+    order: 1,
+    aliases: ["private", "pvt", "pvt."],
+  },
   {
     key: "private_first_class",
     order: 2,
-    aliases: ["private first class", "pfc", "private 1st class"],
+    aliases: [
+      "private first class",
+      "private 1st class",
+      "pfc",
+      "pvt first class",
+      "pvt. first class",
+      "pvt 1st class",
+      "pvt. 1st class",
+      "private firstclass",
+    ],
   },
-  { key: "lance_corporal", order: 3, aliases: ["lance corporal", "lcpl", "lance cpl"] },
-  { key: "corporal", order: 4, aliases: ["corporal", "cpl"] },
-  { key: "sergeant", order: 5, aliases: ["sergeant", "sgt"] },
-  { key: "staff_sergeant", order: 6, aliases: ["staff sergeant", "ssgt", "staff sgt"] },
-  { key: "sergeant_major", order: 7, aliases: ["sergeant major", "sgt major"] },
+  { key: "lance_corporal", order: 3, aliases: ["lance corporal", "lance cpl", "lcpl", "l/cpl"] },
+  { key: "corporal", order: 4, aliases: ["corporal", "cpl", "kpl", "korporal"] },
+  { key: "sergeant", order: 5, aliases: ["sergeant", "sgt", "sgt.", "srg"] },
+  { key: "staff_sergeant", order: 6, aliases: ["staff sergeant", "staff sgt", "ssgt", "ssgt."] },
+  { key: "sergeant_major", order: 7, aliases: ["sergeant major", "sgt major", "sgt. major", "sgmaj", "sg maj"] },
 
   // Officers
-  { key: "lieutenant", order: 8, aliases: ["lieutenant", "lt"] },
-  { key: "first_lieutenant", order: 9, aliases: ["first lieutenant", "1st lieutenant", "1st lt"] },
-  { key: "captain", order: 10, aliases: ["captain", "cpt", "capt"] },
-  { key: "major", order: 11, aliases: ["major", "maj"] },
-  { key: "commander", order: 12, aliases: ["commander", "cmdr"] },
+  { key: "lieutenant", order: 8, aliases: ["lieutenant", "lt", "lt.", "leutnant"] },
+  {
+    key: "first_lieutenant",
+    order: 9,
+    aliases: ["first lieutenant", "1st lieutenant", "1st lt", "1st lt.", "1. lt", "1. lt."],
+  },
+  { key: "captain", order: 10, aliases: ["captain", "capt", "cpt", "cpt.", "hauptmann"] },
+  { key: "major", order: 11, aliases: ["major", "maj", "maj."] },
+  { key: "commander", order: 12, aliases: ["commander", "cmdr", "cmdr.", "kommandeur"] },
 ];
 
 function resolveRank(listName: string): RankDef | null {
@@ -148,10 +179,13 @@ export async function POST(req: Request) {
 
   const from = ranked.find((l) => l.id === fromListId);
   if (!from) {
+    const fromListName = lists.find((l) => l.id === fromListId)?.name ?? "(unbekannt)";
     return NextResponse.json(
       {
         error: "Ziel Rang nicht gefunden",
-        details: "Aktuelle Trello-Liste ist kein erkannter Rang. Prüfe den Listen-Namen.",
+        details:
+          "Aktuelle Trello-Liste ist kein erkannter Rang. Prüfe den Listen-Namen (Emojis/Abkürzungen werden unterstützt, aber der Rang muss im Namen erkennbar sein).",
+        debug: { fromListId, fromListName, cardName },
       },
       { status: 400 }
     );
@@ -180,12 +214,22 @@ export async function POST(req: Request) {
       {
         error: "Ziel Rang nicht gefunden",
         details: `Kein Trello-Listeneintrag für Zielrang (${expected}). Prüfe ob die Liste existiert und korrekt benannt ist.`,
+        debug: {
+          from: { id: from.id, name: from.name, order: from.order, rankKey: from.rankKey },
+          targetOrder,
+          expected,
+        },
       },
       { status: 400 }
     );
   }
 
-  const to = candidates[0];
+  // Prefer best match if there are multiple lists with same order.
+  const canonical = (RANKS.find((r) => r.order === targetOrder)?.aliases?.[0] ?? "").toLowerCase();
+  const to =
+    candidates.find((c) => norm(c.name) === norm(canonical)) ??
+    candidates.find((c) => norm(c.name).includes(norm(canonical))) ??
+    candidates[0];
 
   // Move card
   const moveUrl = `https://api.trello.com/1/cards/${cardId}?key=${key}&token=${token}`;
