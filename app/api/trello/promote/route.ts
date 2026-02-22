@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requiredEnv, trelloBaseParams } from "../../_lib/trello";
 import { requireSignedIn } from "@/lib/authz";
+import { sendDiscordPromotionEmbed } from "../../_lib/discord";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,11 +63,12 @@ export async function POST(req: Request) {
   const boardId = requiredEnv("TRELLO_BOARD_ID");
 
   // Read card current list
-  const cardUrl = `https://api.trello.com/1/cards/${cardId}?key=${key}&token=${token}&fields=idList`;
+  const cardUrl = `https://api.trello.com/1/cards/${cardId}?key=${key}&token=${token}&fields=idList,name`;
   const card = await fetchJson(cardUrl);
   if (!card.res.ok) return NextResponse.json({ error: "Trello card read failed", status: card.res.status, details: card.json ?? card.text }, { status: 500 });
 
   const fromListId = String(card.json?.idList ?? "");
+  const cardName = String(card.json?.name ?? "").trim() || "Unbekannt";
   if (!fromListId) return NextResponse.json({ error: "Cannot resolve current list" }, { status: 500 });
 
   // Get all lists on board
@@ -127,6 +129,14 @@ export async function POST(req: Request) {
   if (!moveRes.ok) {
     return NextResponse.json({ error: "Trello move failed", status: moveRes.status, details: moveJson ?? moveText }, { status: 500 });
   }
+
+  // Discord webhook (best-effort)
+  await sendDiscordPromotionEmbed({
+    name: cardName,
+    oldRank: from.name,
+    newRank: to.name,
+    direction: direction as "promote" | "demote",
+  });
 
   return NextResponse.json({ ok: true, moved: true, from: { id: from.id, name: from.name }, to: { id: to.id, name: to.name } });
 }
