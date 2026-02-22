@@ -85,8 +85,8 @@ export default function CommandDeck() {
       x: Math.random(),
       y: Math.random(),
       z: Math.random(),
-      s: 0.4 + Math.random() * 1.5,
-      v: 0.14 + Math.random() * 0.6,
+      s: 0.4 + Math.random() * 0.5,
+      v: 0.14 + Math.random() * 0.3,
     }));
 
     const resize = () => {
