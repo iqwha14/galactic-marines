@@ -30,10 +30,6 @@ type Payload = {
   medals: string[];
   adjutantListId: string | null;
   adjutantCards: Marine[];
-  /** Optional Trello list id for the Jedi roster (env: TRELLO_JEDI_LIST_ID) */
-  jediListId: string | null;
-  /** Members/cards that live in the Jedi list */
-  jediCards: Marine[];
   absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: Absence[] }[];
 };
 
@@ -57,19 +53,10 @@ function HudCard({
     <div className="relative overflow-hidden rounded-2xl bg-hud-panel/80 shadow-hud border border-hud-line/80">
       <div className="scanline absolute inset-0" />
       <div className="relative p-5">
-        {/*
-          IMPORTANT: On small screens, the header actions ("right") must not be clipped.
-          The card uses overflow-hidden for the HUD look, so we stack the header on mobile.
-        */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">{title}</h2>
-            <div className="hidden sm:block h-px flex-1 bg-gradient-to-r from-hud-line/0 via-hud-line/80 to-hud-line/0" />
-          </div>
-          <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2">
-            {right ?? <span className="text-xs text-marine-300/90">GM // HUD</span>}
-          </div>
-          <div className="sm:hidden h-px w-full bg-gradient-to-r from-hud-line/0 via-hud-line/80 to-hud-line/0" />
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">{title}</h2>
+          <div className="h-px flex-1 bg-gradient-to-r from-hud-line/0 via-hud-line/80 to-hud-line/0" />
+          {right ?? <span className="text-xs text-marine-300/90">GM // HUD</span>}
         </div>
         <div className="mt-4">{children}</div>
       </div>
@@ -92,7 +79,7 @@ function Pill({ label, state }: { label: string; state: "complete" | "incomplete
       className={[
         "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs",
         complete
-          ? "border-green-500/40 bg-green-500/10 text-green-200"
+          ? "border-green-500/60 bg-green-500/10 text-green-200"
           : "border-hud-line/70 bg-black/20 text-hud-muted",
       ].join(" ")}
     >
@@ -312,11 +299,6 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
     setData(j);
   }
 
-  function loadTrello() {
-    load().catch((e: any) => setErr(friendlyError(e?.message ?? "Unknown error")));
-  }
-
-
   useEffect(() => {
     load().catch((e: any) => setErr(friendlyError(e?.message ?? "Unknown error")));
   }, []);
@@ -420,7 +402,7 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
               <span
                 className={[
                   "inline-flex h-2.5 w-2.5 rounded-full",
-                  status === "ONLINE" ? "bg-emerald-400" : status === "ERROR" ? "bg-red-400" : "bg-marine-500",
+                  status === "ONLINE" ? "bg-green-400" : status === "ERROR" ? "bg-red-400" : "bg-marine-500",
                   "shadow-[0_0_18px_rgba(68,24,38,.35)]",
                 ].join(" ")}
               />
@@ -580,10 +562,8 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
               </div>
             </HudCard>
 
-            <HudCard
-        title="Einheitsmitglieder"
-      >
-              <MemberTable
+            <HudCard title="Einheitsmitglieder">
+<MemberTable
                 rows={filtered}
                 data={data}
                 mode={mode}
