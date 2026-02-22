@@ -155,20 +155,22 @@ export default function MembersPage() {
           </HudCard>
         </div>
 
-<div className="mb-4 text-sm text-hud-muted">
-  Aktives Roster:{" "}
-  <span className="font-semibold text-white">
-    {view === "roster"
-      ? "Standard"
-      : view === "jedi"
-      ? "Jedi"
-      : "Adjutanten"}
-  </span>
-</div>
+        {/* -------- Anzeige aktives Roster -------- */}
+
+        <div className="mt-6 text-sm text-hud-muted">
+          Aktives Roster:{" "}
+          <span className="font-semibold text-white">
+            {view === "roster"
+              ? "Standard"
+              : view === "jedi"
+              ? "Jedi"
+              : "Adjutanten"}
+          </span>
+        </div>
 
         {/* -------- ROSTER -------- */}
 
-        <div className="mt-6 rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
+        <div className="mt-4 rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
 
           {loading && <div>Lade...</div>}
           {err && <div className="text-red-400">{err}</div>}
@@ -238,7 +240,7 @@ export default function MembersPage() {
             </table>
           </div>
 
-          {/* -------- ABMELDUNGEN (ORANGE) -------- */}
+          {/* -------- ABMELDUNGEN -------- */}
 
           {data?.absent?.map((a) => (
             <div key={a.id} className="mt-6">
