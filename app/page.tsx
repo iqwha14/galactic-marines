@@ -77,7 +77,6 @@ export default function CommandDeck() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    let raf = 0;
     let w = 0;
     let h = 0;
 
@@ -98,16 +97,7 @@ export default function CommandDeck() {
 
     let stars = makeStars(desiredCount());
 
-    const resize = () => {
-      w = canvas.width = Math.floor(window.innerWidth * devicePixelRatio);
-      h = canvas.height = Math.floor(window.innerHeight * devicePixelRatio);
-      const want = desiredCount();
-      if (stars.length !== want) stars = makeStars(want);
-    };
-    resize();
-    window.addEventListener("resize", resize);
-
-    const tick = () => {
+    const draw = () => {
       ctx.clearRect(0, 0, w, h);
 
       const g = ctx.createRadialGradient(w * 0.52, h * 0.42, 0, w * 0.5, h * 0.5, Math.max(w, h) * 0.65);
@@ -118,14 +108,6 @@ export default function CommandDeck() {
 
       ctx.fillStyle = "rgba(255,255,255,0.7)";
       for (const st of stars) {
-        st.y += (st.v / 1600) * (h / devicePixelRatio);
-        if (st.y > 1) {
-          st.y = 0;
-          st.x = Math.random();
-          st.z = Math.random();
-          st.s = 0.35 + Math.random() * 1.1;
-          st.v = 0.06 + Math.random() * 0.22;
-        }
         const px = st.x * w;
         const py = st.y * h;
         const r = st.s * (0.6 + st.z) * devicePixelRatio;
@@ -135,12 +117,22 @@ export default function CommandDeck() {
         ctx.fill();
       }
       ctx.globalAlpha = 1;
-      raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
+
+    const resize = () => {
+      w = canvas.width = Math.floor(window.innerWidth * devicePixelRatio);
+      h = canvas.height = Math.floor(window.innerHeight * devicePixelRatio);
+      const want = desiredCount();
+      if (stars.length !== want) stars = makeStars(want);
+      draw();
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    // Static background: draw once (and on resize). No animation loop.
+    draw();
 
     return () => {
-      cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
     };
   }, []);

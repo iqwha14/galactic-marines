@@ -57,10 +57,19 @@ function HudCard({
     <div className="relative overflow-hidden rounded-2xl bg-hud-panel/80 shadow-hud border border-hud-line/80">
       <div className="scanline absolute inset-0" />
       <div className="relative p-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">{title}</h2>
-          <div className="h-px flex-1 bg-gradient-to-r from-hud-line/0 via-hud-line/80 to-hud-line/0" />
-          {right ?? <span className="text-xs text-marine-300/90">GM // HUD</span>}
+        {/*
+          IMPORTANT: On small screens, the header actions ("right") must not be clipped.
+          The card uses overflow-hidden for the HUD look, so we stack the header on mobile.
+        */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">{title}</h2>
+            <div className="hidden sm:block h-px flex-1 bg-gradient-to-r from-hud-line/0 via-hud-line/80 to-hud-line/0" />
+          </div>
+          <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2">
+            {right ?? <span className="text-xs text-marine-300/90">GM // HUD</span>}
+          </div>
+          <div className="sm:hidden h-px w-full bg-gradient-to-r from-hud-line/0 via-hud-line/80 to-hud-line/0" />
         </div>
         <div className="mt-4">{children}</div>
       </div>
