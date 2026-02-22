@@ -92,11 +92,11 @@ function Pill({ label, state }: { label: string; state: "complete" | "incomplete
       className={[
         "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs",
         complete
-          ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+          ? "border-green-500/40 bg-green-500/10 text-green-200"
           : "border-hud-line/70 bg-black/20 text-hud-muted",
       ].join(" ")}
     >
-      <span className={["h-1.5 w-1.5 rounded-full", complete ? "bg-emerald-400" : "bg-hud-line"].join(" ")} />
+      <span className={["h-1.5 w-1.5 rounded-full", complete ? "bg-green-400" : "bg-hud-line"].join(" ")} />
       {label}
     </span>
   );
@@ -551,35 +551,37 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
                 <Badge>Total: {data?.marines.length ?? 0}</Badge>
                 <Badge>Gefiltert: {filtered.length}</Badge>
               </div>
+
+              {/* Quick navigation / actions (unter dem Filter, immer sichtbar – auch mobil) */}
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  className={["btn", "btn-ghost", data?.jediListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
+                  onClick={() => data?.jediListId && setTab("jedi")}
+                  disabled={!data?.jediListId}
+                  title={data?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
+                  type="button"
+                >
+                  Jedi
+                </button>
+
+                <button
+                  className={["btn", "btn-ghost", data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
+                  onClick={() => data?.adjutantListId && setTab("adjutant")}
+                  disabled={!data?.adjutantListId}
+                  title={data?.adjutantListId ? "Adjutanten verwalten" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
+                  type="button"
+                >
+                  Adjutanten
+                </button>
+
+                <button className="btn btn-ghost" onClick={loadTrello} type="button">
+                  Reload
+                </button>
+              </div>
             </HudCard>
 
             <HudCard
         title="Einheitsmitglieder"
-        right={
-          <div className="flex items-center gap-2">
-            <button
-              className={["btn", "btn-ghost", data?.jediListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
-              onClick={() => data?.jediListId && setTab("jedi")}
-              disabled={!data?.jediListId}
-              title={data?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
-              type="button"
-            >
-              Jedi
-            </button>
-            <button
-              className={["btn", "btn-ghost", data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
-              onClick={() => data?.adjutantListId && setTab("adjutant")}
-              disabled={!data?.adjutantListId}
-              title={data?.adjutantListId ? "Adjutanten verwalten" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
-              type="button"
-            >
-              Adjutanten
-            </button>
-            <button className="btn btn-ghost" onClick={loadTrello} type="button">
-              Reload
-            </button>
-          </div>
-        }
       >
               <MemberTable
                 rows={filtered}
