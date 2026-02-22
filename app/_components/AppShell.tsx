@@ -30,7 +30,11 @@ type Payload = {
   medals: string[];
   adjutantListId: string | null;
   adjutantCards: Marine[];
+  jediListId: string | null;
+  jediCards: Marine[];
   absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: Absence[] }[];
+  // Optional debug payload from /api/trello (not required for UI)
+  debug?: unknown;
 };
 
 type LogEntry = { id: string; when: string; who: string; kind: string; title: string };
