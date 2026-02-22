@@ -30,11 +30,7 @@ type Payload = {
   medals: string[];
   adjutantListId: string | null;
   adjutantCards: Marine[];
-  jediListId: string | null;
-  jediCards: Marine[];
   absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: Absence[] }[];
-  // Optional debug payload from /api/trello (not required for UI)
-  debug?: unknown;
 };
 
 type LogEntry = { id: string; when: string; who: string; kind: string; title: string };
@@ -302,10 +298,6 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
     if (!res.ok) throw new Error(j?.details || j?.error || "Failed to load");
     setData(j);
   }
-
-  const loadTrello = () => {
-    load().catch((e: any) => setErr(friendlyError(e?.message ?? "Unknown error")));
-  };
 
   useEffect(() => {
     load().catch((e: any) => setErr(friendlyError(e?.message ?? "Unknown error")));
