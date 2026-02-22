@@ -54,6 +54,18 @@ create table if not exists public.operation_reports (
   updated_at timestamptz not null default now()
 );
 
+-- Unit membership mapping (Discord -> Trello marine card)
+-- Enables: self-service "Einsatz beitreten" and participation-gated ratings.
+create table if not exists public.gm_unit_members (
+  discord_id text primary key,
+  marine_card_id text not null,
+  display_name text null,
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_gm_unit_members_card on public.gm_unit_members(marine_card_id);
+create index if not exists idx_gm_unit_members_updated on public.gm_unit_members(updated_at desc);
+
 create index if not exists idx_operations_start_at on public.operations(start_at desc);
 create index if not exists idx_participants_op on public.operation_participants(operation_id);
 create index if not exists idx_reports_op on public.operation_reports(operation_id);

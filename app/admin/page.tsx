@@ -8,9 +8,7 @@ function Denied({ title, detail }: { title: string; detail: string }) {
     <main className="min-h-screen hud-grid px-6 py-10">
       <div className="mx-auto max-w-4xl">
         <div className="mb-6">
-          <Link href="/" className="btn btn-ghost">
-            ← Command Deck
-          </Link>
+          <Link href="/" className="btn btn-ghost">← Command Deck</Link>
         </div>
         <div className="rounded-2xl border border-marine-500/40 bg-marine-500/10 p-6">
           <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">ACCESS CONTROL</div>
@@ -41,32 +39,27 @@ export default async function AdminPage() {
               Logs für Editors. Rechteverwaltung nur für Admin. Weitere Module: Audit, Export, Feature Toggles, Notfallmodus.
             </p>
           </div>
-          <Link href="/" className="btn btn-ghost">
-            ← Command Deck
-          </Link>
+          <Link href="/" className="btn btn-ghost">← Command Deck</Link>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-3">
           <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud lg:col-span-2">
             <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Logs</h2>
             <div className="mt-4">
-              <a className="btn btn-accent" href="/logs">
-                Logs öffnen
-              </a>
+              <a className="btn btn-accent" href="/logs">Logs öffnen</a>
               <div className="mt-3 text-sm text-hud-muted">
-                Hinweis: Falls du keine /logs Seite hast, nutze direkt die API{" "}
-                <code className="text-white/80">/api/log</code>.
+                Hinweis: Falls du keine /logs Seite hast, nutze direkt die API <code className="text-white/80">/api/log</code>.
               </div>
             </div>
           </section>
 
           <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
             <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Rollen & Rechte</h2>
-            <p className="mt-3 text-sm text-hud-muted">Rechte vergeben auch für Offline-User (Discord ID).</p>
+            <p className="mt-3 text-sm text-hud-muted">
+              Rechte vergeben auch für Offline-User (Discord ID).
+            </p>
             {adminGate.ok ? (
-              <a className="btn btn-accent mt-4" href="/admin/permissions">
-                Permissions Console
-              </a>
+              <a className="btn btn-accent mt-4" href="/admin/permissions">Permissions Console</a>
             ) : (
               <div className="mt-4 rounded-xl border border-marine-500/40 bg-marine-500/10 p-3 text-sm">
                 <div className="font-medium">Admin erforderlich</div>
@@ -75,45 +68,33 @@ export default async function AdminPage() {
             )}
           </section>
 
-          {/* ✅ NEU: Discord Automationen */}
           <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
-            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Discord Automationen</h2>
-            <p className="mt-3 text-sm text-hud-muted">
-              Planned Messages + Aktenkontrolle (Webhook-only). Läuft über{" "}
-              <code className="text-white/80">/api/cron/automations</code>.
-            </p>
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Audit-Trail</h2>
+            <p className="mt-3 text-sm text-hud-muted">Optional: gm_audit Tabelle. Sonst wird ein Hinweis angezeigt.</p>
+            <a className="btn btn-ghost mt-4" href="/admin/audit">Audit ansehen</a>
+          </section>
+
+          <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
+            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Einheit Mitglieder</h2>
+            <p className="mt-3 text-sm text-hud-muted">Discord IDs zu Trello-Marines zuordnen (für Einsatz beitreten & Bewertungen).</p>
             {adminGate.ok ? (
-              <a className="btn btn-ghost mt-4" href="/admin/automations">
-                Automationen öffnen
-              </a>
+              <a className="btn btn-ghost mt-4" href="/admin/unit-members">Zuordnung öffnen</a>
             ) : (
               <div className="mt-4 text-sm text-hud-muted">Gesperrt (Admin erforderlich).</div>
             )}
           </section>
 
           <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
-            <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Audit-Trail</h2>
-            <p className="mt-3 text-sm text-hud-muted">Optional: gm_audit Tabelle. Sonst wird ein Hinweis angezeigt.</p>
-            <a className="btn btn-ghost mt-4" href="/admin/audit">
-              Audit ansehen
-            </a>
-          </section>
-
-          <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
             <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Datenexport</h2>
             <p className="mt-3 text-sm text-hud-muted">Exportiert Ops + Participants als JSON (Editor).</p>
-            <a className="btn btn-ghost mt-4" href="/api/admin/export" target="_blank" rel="noreferrer">
-              Export JSON
-            </a>
+            <a className="btn btn-ghost mt-4" href="/api/admin/export" target="_blank" rel="noreferrer">Export JSON</a>
           </section>
 
           <section className="rounded-2xl border border-hud-line/80 bg-hud-panel/80 p-5 shadow-hud">
             <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Feature Toggles</h2>
             <p className="mt-3 text-sm text-hud-muted">Admin-only. Optional: gm_feature_flags Tabelle.</p>
             {adminGate.ok ? (
-              <a className="btn btn-ghost mt-4" href="/admin/flags">
-                Flags Console
-              </a>
+              <a className="btn btn-ghost mt-4" href="/admin/flags">Flags Console</a>
             ) : (
               <div className="mt-4 text-sm text-hud-muted">Gesperrt.</div>
             )}
@@ -123,9 +104,7 @@ export default async function AdminPage() {
             <h2 className="text-sm tracking-[0.22em] uppercase text-hud-muted">Notfallmodus</h2>
             <p className="mt-3 text-sm text-hud-muted">Schaltet emergency_lockdown Flag (Admin).</p>
             {adminGate.ok ? (
-              <a className="btn btn-ghost mt-4" href="/admin/emergency">
-                Emergency Switch
-              </a>
+              <a className="btn btn-ghost mt-4" href="/admin/emergency">Emergency Switch</a>
             ) : (
               <div className="mt-4 text-sm text-hud-muted">Gesperrt.</div>
             )}
