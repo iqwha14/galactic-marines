@@ -10,42 +10,27 @@ import DiscordProvider from "next-auth/providers/discord";
  * - DISCORD_CLIENT_ID
  * - DISCORD_CLIENT_SECRET
  *
- * Optional RBAC allowlists (Discord user IDs):
- * - ADMIN_DISCORD_IDS   (admin = alles)
- * - EDITOR_DISCORD_IDS  (editor = ops/admin eingeschränkt)
- * - UO_DISCORD_IDS      (UO docs + limited promotions)
- * - FE_DISCORD_IDS      (FE docs + full promotions + training toggles)
+ * Role allowlists (Discord user IDs; comma/space/newline separated):
+ * - ADMIN_DISCORD_IDS   -> Einheitsleitung
+ * - FE_DISCORD_IDS      -> FE
+ * - UO_DISCORD_IDS      -> UO
  *
- * You may also use the GM_* aliases:
- * - GM_ADMINS, GM_EDITORS, GM_UO_VIEWERS, GM_FE_VIEWERS
+ * Compatibility envs (optional):
+ * - GM_ADMINS, GM_FE_VIEWERS, GM_UO_VIEWERS
  */
-function parseIdList(v: string | undefined | null): string[] {
-  // Support commas, whitespace, newlines (Vercel UI sometimes adds newlines)
-  return String(v ?? "")
-    .split(/[,\n\s]+/g)
-    .map((s) => s.trim())
-    .filter(Boolean);
+function parseAllowlist(...names: string[]): Set<string> {
+  const raw = names.map((n) => process.env[n] ?? "").filter(Boolean).join("\n");
+  return new Set(
+    raw
+      .split(/[\s,\n]+/g)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
 }
 
-const ADMIN_IDS = [
-  ...parseIdList(process.env.ADMIN_DISCORD_IDS),
-  ...parseIdList(process.env.GM_ADMINS),
-];
-
-const EDITOR_IDS = [
-  ...parseIdList(process.env.EDITOR_DISCORD_IDS),
-  ...parseIdList(process.env.GM_EDITORS),
-];
-
-const UO_IDS = [
-  ...parseIdList(process.env.UO_DISCORD_IDS),
-  ...parseIdList(process.env.GM_UO_VIEWERS),
-];
-
-const FE_IDS = [
-  ...parseIdList(process.env.FE_DISCORD_IDS),
-  ...parseIdList(process.env.GM_FE_VIEWERS),
-];
+const ADMIN_IDS = parseAllowlist("ADMIN_DISCORD_IDS", "GM_ADMINS");
+const FE_IDS = parseAllowlist("FE_DISCORD_IDS", "GM_FE_VIEWERS");
+const UO_IDS = parseAllowlist("UO_DISCORD_IDS", "GM_UO_VIEWERS");
 
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
@@ -57,40 +42,32 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, account, profile }) {
-      // Derive Discord ID robustly across first login and subsequent refreshes
       const discordId =
-        String((profile as any)?.id ?? "") ||
-        String((account as any)?.providerAccountId ?? "") ||
-        String((token as any)?.discordId ?? "") ||
-        String((token as any)?.sub ?? "");
+        (profile as any)?.id ??
+        (token as any)?.discordId ??
+        (account as any)?.providerAccountId ??
+        (token as any)?.sub ??
+        null;
 
-      if (discordId) {
-        (token as any).discordId = discordId;
+      const id = discordId ? String(discordId) : "";
 
-        const isAdmin = ADMIN_IDS.includes(discordId);
-        const isEditor = isAdmin || EDITOR_IDS.includes(discordId);
-        const canSeeUO = isAdmin || isEditor || UO_IDS.includes(discordId);
-        const canSeeFE = isAdmin || isEditor || FE_IDS.includes(discordId);
+      (token as any).discordId = id || null;
 
-        (token as any).isAdmin = isAdmin;
-        (token as any).isEditor = isEditor;
-        (token as any).canSeeUO = canSeeUO;
-        (token as any).canSeeFE = canSeeFE;
-      } else {
-        (token as any).discordId = null;
-        (token as any).isAdmin = false;
-        (token as any).isEditor = false;
-        (token as any).canSeeUO = false;
-        (token as any).canSeeFE = false;
-      }
+      const isAdmin = id ? ADMIN_IDS.has(id) : false;
+      const canSeeFE = id ? (isAdmin || FE_IDS.has(id)) : false;
+      const canSeeUO = id ? (isAdmin || canSeeFE || UO_IDS.has(id)) : false;
+
+      (token as any).isAdmin = isAdmin;
+      (token as any).canSeeFE = canSeeFE;
+      (token as any).canSeeUO = canSeeUO;
+
       return token;
     },
     async session({ session, token }) {
       (session as any).discordId = (token as any).discordId ?? null;
       (session as any).isAdmin = !!(token as any).isAdmin;
-      (session as any).isEditor = !!(token as any).isEditor;
-      (session as any).canSeeUO = !!(token as any).canSeeUO;
       (session as any).canSeeFE = !!(token as any).canSeeFE;
+      (session as any).canSeeUO = !!(token as any).canSeeUO;
       return session;
     },
   },

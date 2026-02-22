@@ -35,6 +35,8 @@ function Stars({ value, onChange }: { value: number; onChange?: (v: number) => v
           ★
         </button>
       ))}
+        </>
+      )}
     </div>
   );
 }
@@ -80,9 +82,14 @@ function rankIndex(rankName: string): number {
 export default function OpsPanel() {
   const { data: session } = useSession();
   const discordId = (session as any)?.discordId as string | undefined;
-  const canEdit = !!(session as any)?.isEditor;
+  const isAdmin = !!(session as any)?.isAdmin;
+  const canSeeFE = !!(session as any)?.canSeeFE;
+  const canSeeUO = !!(session as any)?.canSeeUO;
+  const canEdit = isAdmin || canSeeFE;
 
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
+  const [mode, setMode] = useState<"ops" | "soldiers">("ops");
+  const [soldierRatings, setSoldierRatings] = useState<{ summary: any[]; rows: any[] } | null>(null);
 
   const [roster, setRoster] = useState<Marine[]>([]);
   const [ops, setOps] = useState<Operation[]>([]);
@@ -141,7 +148,15 @@ export default function OpsPanel() {
     setDetail({ participants: j.participants ?? [], reports: j.reports ?? [], ratings: j.ratings ?? [], marineRatings: j.marineRatings ?? [] });
   }
 
-  useEffect(() => {
+  
+  async function loadSoldierRatings() {
+    const res = await fetch("/api/ratings/marines", { cache: "no-store" });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j?.error || j?.details || "Ratings load failed");
+    setSoldierRatings({ summary: j.summary ?? [], rows: j.rows ?? [] });
+  }
+
+useEffect(() => {
     setErr(null);
     // Einsätze dürfen alle ansehen. Roster ist ebenfalls öffentlich (Trello GET) – damit auch Gäste Namen/Ränge sehen.
     const jobs: Promise<any>[] = [loadOps(), loadRoster()];
@@ -416,6 +431,93 @@ export default function OpsPanel() {
 
   return (
     <div className="relative grid gap-6 lg:grid-cols-[360px_1fr]">
+      {/* MODE_TOGGLE */}
+      <div className="lg:col-span-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-hud-line/70 bg-hud-panel/30 p-3">
+        <div className="text-xs uppercase tracking-[0.22em] text-hud-muted">Einsatzzentrale</div>
+        <div className="flex flex-wrap gap-2">
+          <button className={["btn", mode === "ops" ? "btn-accent" : "btn-ghost"].join(" ")} onClick={() => setMode("ops")}>Einsätze</button>
+          {(canSeeFE || isAdmin) ? (
+            <button
+              className={["btn", mode === "soldiers" ? "btn-accent" : "btn-ghost"].join(" ")}
+              onClick={async () => {
+                setMode("soldiers");
+                if (!soldierRatings) {
+                  try { await loadSoldierRatings(); } catch (e: any) { setErr(String(e?.message ?? e)); }
+                }
+              }}
+            >
+              Soldatenbewertungen
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {mode === "soldiers" ? (
+        <div className="lg:col-span-2 rounded-2xl border border-hud-line/70 bg-hud-panel/30 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-medium">Durchschnitt je Soldat</div>
+              <div className="mt-1 text-xs text-hud-muted">FE/Einheitsleitung sehen alle Bewertungen. Abgeben kann nur, wer mit Discord angemeldet ist.</div>
+            </div>
+            <button className="btn btn-ghost" onClick={loadSoldierRatings}>Reload</button>
+          </div>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-left text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-[0.18em] text-hud-muted">
+                  <th className="border-b border-hud-line/70 py-3 pr-4">Soldat</th>
+                  <th className="border-b border-hud-line/70 py-3 pr-4">Ø</th>
+                  <th className="border-b border-hud-line/70 py-3 pr-4">Anzahl</th>
+                  <th className="border-b border-hud-line/70 py-3 pr-4">Details (wer → Einsatz)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(soldierRatings?.summary ?? []).map((s) => {
+                  const m = roster.find((x) => x.id === s.marine_card_id);
+                  const name = m ? `${m.rank} • ${m.name}` : s.marine_card_id;
+                  const rows = (soldierRatings?.rows ?? []).filter((r) => r.marine_card_id === s.marine_card_id);
+                  return (
+                    <tr key={s.marine_card_id} className="align-top hover:bg-white/5">
+                      <td className="border-b border-hud-line/40 py-4 pr-4">
+                        <div className="font-medium">{name}</div>
+                        {m ? <div className="mt-1 text-xs text-hud-muted">{m.unitGroup}</div> : null}
+                      </td>
+                      <td className="border-b border-hud-line/40 py-4 pr-4">
+                        <div className="font-medium">{Number(s.avg).toFixed(2)}</div>
+                      </td>
+                      <td className="border-b border-hud-line/40 py-4 pr-4">{s.count}</td>
+                      <td className="border-b border-hud-line/40 py-4 pr-4">
+                        <div className="space-y-1">
+                          {rows.slice(0, 10).map((r, idx) => (
+                            <div key={idx} className="text-xs text-white/80">
+                              <span className="text-hud-muted">{r.discord_id}</span> → <span className="font-medium">{r.stars}★</span>
+                              <span className="text-hud-muted"> • </span>
+                              <span>{r.operation?.title ?? r.operation_id}</span>
+                            </div>
+                          ))}
+                          {rows.length > 10 ? <div className="text-xs text-hud-muted">… {rows.length - 10} weitere</div> : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!(soldierRatings?.summary ?? []).length ? (
+                  <tr>
+                    <td colSpan={4} className="py-8 text-center text-hud-muted">
+                      Keine Soldatenbewertungen vorhanden.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {mode === "soldiers" ? null : (
+        <>
+
       {toast ? (
         <div
           className={[
@@ -848,6 +950,8 @@ export default function OpsPanel() {
           </>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

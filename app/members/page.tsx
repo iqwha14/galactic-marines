@@ -162,13 +162,10 @@ export default function MembersPage() {
     }
 
     try {
-      const listId = findAdjacentListId(currentRank, dir);
-      if (!listId) throw new Error("Kein Ziel-Rang gefunden (Trello Liste fehlt?)");
-
-      const res = await fetch("/api/trello/promote", {
+const res = await fetch("/api/trello/promote", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cardId, listId }),
+        body: JSON.stringify({ cardId, direction: dir === 1 ? "promote" : "demote" }),
       });
       const text = await res.text();
       const json = parseJsonSafe(text);
