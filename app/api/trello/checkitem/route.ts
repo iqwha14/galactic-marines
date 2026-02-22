@@ -45,6 +45,32 @@ export async function POST(req: Request) {
 
   const { key, token } = trelloBaseParams();
 
+  // Preflight: determine if this is a medal item BEFORE toggling (so we can enforce FE-only)
+  let itemNamePre = "";
+  let checklistIdPre = "";
+  const itemUrlPre = `https://api.trello.com/1/cards/${cardId}/checkItem/${checkItemId}?key=${key}&token=${token}`;
+  const itemRespPre = await fetchJson(itemUrlPre);
+  if (itemRespPre.res.ok) {
+    itemNamePre = String(itemRespPre.json?.name ?? "");
+    checklistIdPre = String(itemRespPre.json?.idChecklist ?? "");
+  }
+
+  let checklistNamePre = "";
+  if (checklistIdPre) {
+    const clUrlPre = `https://api.trello.com/1/checklists/${checklistIdPre}?key=${key}&token=${token}&fields=name`;
+    const clRespPre = await fetchJson(clUrlPre);
+    if (clRespPre.res.ok) checklistNamePre = String(clRespPre.json?.name ?? "");
+  }
+
+  const isMedalPre = looksLikeMedal(checklistNamePre, itemNamePre);
+
+  if (isMedalPre && !canToggleMedal) {
+    return NextResponse.json({ error: "Nur FE/Einheitsleitung darf Medaillen abhaken/revidieren." }, { status: 403 });
+  }
+  if (!isMedalPre && !canToggleTraining) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+
   // 1) Toggle checkitem state
   const putUrl = new URL(`https://api.trello.com/1/cards/${cardId}/checkItem/${checkItemId}`);
   putUrl.searchParams.set("key", key);

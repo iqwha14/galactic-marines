@@ -13,7 +13,6 @@ type Marine = {
   rank: string;
   rankSince?: string | null;
   unitGroup: string;
-  listId?: string;
   trainings: ChecklistItem[];
   medals: ChecklistItem[];
 };
@@ -76,7 +75,10 @@ export default function MembersPage() {
   const isAdmin = !!(session as any)?.isAdmin;
   const isFE = !!(session as any)?.canSeeFE;
   const isUO = !!(session as any)?.canSeeUO;
-  const canToggleChecks = isAdmin || isFE || isUO;
+    const canToggleTrainings = isAdmin || isFE || isUO;
+  const canToggleMedals = isAdmin || isFE;
+  // Backwards-compat for existing UI text (means: trainings are toggleable)
+  const canToggleChecks = canToggleTrainings;
   const canPromoteAll = isAdmin || isFE;
   const canUOLimitedPromote = isUO && !canPromoteAll;
 
@@ -123,29 +125,8 @@ export default function MembersPage() {
 
   const baseMarines = useMemo(() => {
     if (!data) return [] as Marine[];
-
-    // Jedi/Adjutanten: bevorzugt dedizierte Arrays (falls Backend sie liefert),
-    // sonst fallback: aus dem Standard-Roster über listId filtern.
-    if (view === "jedi") {
-      const direct = (data.jediCards ?? []) as Marine[];
-      if (direct.length) return direct;
-
-      const listId = data.jediListId ?? null;
-      const all = (data.marines ?? []) as Marine[];
-      if (!listId) return [];
-      return all.filter((m: any) => m?.listId === listId);
-    }
-
-    if (view === "adjutant") {
-      const direct = (data.adjutantCards ?? []) as Marine[];
-      if (direct.length) return direct;
-
-      const listId = data.adjutantListId ?? null;
-      const all = (data.marines ?? []) as Marine[];
-      if (!listId) return [];
-      return all.filter((m: any) => m?.listId === listId);
-    }
-
+    if (view === "jedi") return (data.jediCards ?? []) as Marine[];
+    if (view === "adjutant") return (data.adjutantCards ?? []) as Marine[];
     return (data.marines ?? []) as Marine[];
   }, [data, view]);
 
@@ -367,10 +348,7 @@ const res = await fetch("/api/trello/promote", {
                 <button
                   className={["btn", "btn-ghost", view === "roster" ? "border border-hud-line/80" : ""].join(" ")}
                   type="button"
-                  onClick={async () => {
-                    await load();
-                    setView("roster");
-                  }}
+                  onClick={() => setView("roster")}
                   title="Standard Roster"
                 >
                   Roster
@@ -384,11 +362,7 @@ const res = await fetch("/api/trello/promote", {
                     data?.jediListId ? "" : "opacity-50 cursor-not-allowed",
                   ].join(" ")}
                   type="button"
-                  onClick={async () => {
-                    if (!data?.jediListId) return;
-                    await load();
-                    setView("jedi");
-                  }}
+                  onClick={() => data?.jediListId && setView("jedi")}
                   disabled={!data?.jediListId}
                   title={data?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
                 >
@@ -403,11 +377,7 @@ const res = await fetch("/api/trello/promote", {
                     data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed",
                   ].join(" ")}
                   type="button"
-                  onClick={async () => {
-                    if (!data?.adjutantListId) return;
-                    await load();
-                    setView("adjutant");
-                  }}
+                  onClick={() => data?.adjutantListId && setView("adjutant")}
                   disabled={!data?.adjutantListId}
                   title={data?.adjutantListId ? "Adjutanten verwalten" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
                 >
@@ -418,13 +388,6 @@ const res = await fetch("/api/trello/promote", {
                   Reload
                 </button>
               </div>
-                <div className="mt-2 text-xs text-hud-muted">
-                  Aktives Roster:{" "}
-                  <span className="font-semibold text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.55)]">
-                    {view === "roster" ? "Standard" : view === "jedi" ? "Jedi" : "Adjutanten"}
-                  </span>
-                </div>
-
 
 
               <div className="text-xs text-hud-muted">
@@ -523,7 +486,7 @@ const res = await fetch("/api/trello/promote", {
                           {allMedals.map((name) => {
                             const it = mdMap.get(name);
                             const done = it?.state === "complete";
-                            const clickable = canToggleChecks && !!it?.id;
+                            const clickable = canToggleMedals && !!it?.id;
                             return (
                               <button
                                 key={name}
@@ -535,7 +498,7 @@ const res = await fetch("/api/trello/promote", {
                                     : "border-hud-line/50 bg-black/15 text-white/65") +
                                   (clickable ? " hover:bg-green-500/25" : " cursor-default")
                                 }
-                                title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : "Nicht klickbar (Item fehlt oder keine Rechte)"}
+                                title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : (!canToggleMedals ? "Nur FE/Einheitsleitung" : "Nicht klickbar (Item fehlt)")}
                                 onClick={() => {
                                   if (!clickable || !it) return;
                                   const next = it.state === "complete" ? "incomplete" : "complete";
@@ -555,7 +518,7 @@ const res = await fetch("/api/trello/promote", {
                           {allTrainings.map((name) => {
                             const it = tMap.get(name);
                             const done = it?.state === "complete";
-                            const clickable = canToggleChecks && !!it?.id;
+                            const clickable = canToggleTrainings && !!it?.id;
                             return (
                               <button
                                 key={name}
@@ -567,7 +530,7 @@ const res = await fetch("/api/trello/promote", {
                                     : "border-hud-line/50 bg-black/15 text-white/65") +
                                   (clickable ? " hover:bg-green-500/25" : " cursor-default")
                                 }
-                                title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : "Nicht klickbar (Item fehlt oder keine Rechte)"}
+                                title={clickable ? "Klicken zum Abhaken/Zurücksetzen" : (!canToggleTrainings ? "Keine Rechte" : "Nicht klickbar (Item fehlt)")}
                                 onClick={() => {
                                   if (!clickable || !it) return;
                                   const next = it.state === "complete" ? "incomplete" : "complete";
