@@ -30,6 +30,10 @@ type Payload = {
   medals: string[];
   adjutantListId: string | null;
   adjutantCards: Marine[];
+  /** Optional Trello list id for the Jedi roster (env: TRELLO_JEDI_LIST_ID) */
+  jediListId: string | null;
+  /** Members/cards that live in the Jedi list */
+  jediCards: Marine[];
   absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: Absence[] }[];
 };
 
