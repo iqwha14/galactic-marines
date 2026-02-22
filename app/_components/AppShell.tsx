@@ -284,6 +284,8 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
   const [tab, setTab] = useState<Tab>(defaultTab);
   const [log, setLog] = useState<LogEntry[] | null>(null);
 
+  const [toast, setToast] = useState<string | null>(null);
+
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -316,6 +318,12 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
     })();
   }, [tab]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   const filtered = useMemo(() => {
     if (!data) return [];
     const s = search.trim().toLowerCase();
@@ -335,6 +343,7 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
 
   async function toggleItem(cardId: string, checkItemId: string, current: "complete" | "incomplete") {
     setBusy(checkItemId);
+    setToast(null);
     try {
       const nextState = current === "complete" ? "incomplete" : "complete";
       const res = await fetch("/api/trello/checkitem", {
@@ -344,6 +353,7 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || j?.details || "Update failed");
+      setToast(nextState === "complete" ? "✅ Abgehakt." : "↩️ Zurückgesetzt.");
       await load();
     } finally {
       setBusy(null);
@@ -352,6 +362,7 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
 
   async function promote(cardId: string, listId: string) {
     setBusy(cardId);
+    setToast(null);
     try {
       const res = await fetch("/api/trello/promote", {
         method: "POST",
@@ -360,6 +371,7 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || j?.details || "Promotion failed");
+      setToast("✅ Rang geändert.");
       await load();
     } finally {
       setBusy(null);
@@ -484,6 +496,10 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
               <div className="font-medium text-red-200">Fehler</div>
               <div className="mt-1 text-hud-muted whitespace-pre-wrap">{friendlyError(err)}</div>
             </div>
+          ) : null}
+
+          {toast ? (
+            <div className="mt-4 rounded-xl border border-hud-line/70 bg-black/20 p-3 text-sm">{toast}</div>
           ) : null}
         </HudCard>
 

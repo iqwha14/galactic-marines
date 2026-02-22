@@ -329,7 +329,7 @@ const res = await fetch("/api/trello/promote", {
               </button>
 
               <div className="text-xs text-hud-muted">
-                Chips: <span className="text-white/70">Rot = vorhanden/abgehakt</span>, <span className="text-white/70">Grau = fehlt/nicht abgehakt</span>.
+                Chips: <span className="text-white/70">Grün = vorhanden/abgehakt</span>, <span className="text-white/70">Grau = fehlt/nicht abgehakt</span>.
                 {canToggleChecks ? " (klickbar)" : " (nur sichtbar)"}
               </div>
             </div>
