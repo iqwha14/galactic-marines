@@ -275,6 +275,7 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
 
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const [search, setSearch] = useState("");
   const [rank, setRank] = useState<string>("");
@@ -283,8 +284,6 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
 
   const [tab, setTab] = useState<Tab>(defaultTab);
   const [log, setLog] = useState<LogEntry[] | null>(null);
-
-  const [toast, setToast] = useState<string | null>(null);
 
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -306,6 +305,12 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
   }, []);
 
   useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2200);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
     if (tab !== "log") return;
     (async () => {
       const res = await fetch("/api/log", { cache: "no-store" });
@@ -317,12 +322,6 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
       setLog(j.entries ?? []);
     })();
   }, [tab]);
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4500);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const filtered = useMemo(() => {
     if (!data) return [];
@@ -343,6 +342,7 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
 
   async function toggleItem(cardId: string, checkItemId: string, current: "complete" | "incomplete") {
     setBusy(checkItemId);
+    setErr(null);
     setToast(null);
     try {
       const nextState = current === "complete" ? "incomplete" : "complete";
@@ -353,8 +353,10 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || j?.details || "Update failed");
-      setToast(nextState === "complete" ? "✅ Abgehakt." : "↩️ Zurückgesetzt.");
+      setToast(nextState === "complete" ? "✅ Abgehakt." : "↩️ Revidiert.");
       await load();
+    } catch (e: any) {
+      setErr(friendlyError(e?.message ?? "Update failed"));
     } finally {
       setBusy(null);
     }
@@ -362,6 +364,7 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
 
   async function promote(cardId: string, listId: string) {
     setBusy(cardId);
+    setErr(null);
     setToast(null);
     try {
       const res = await fetch("/api/trello/promote", {
@@ -373,6 +376,8 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
       if (!res.ok) throw new Error(j?.error || j?.details || "Promotion failed");
       setToast("✅ Rang geändert.");
       await load();
+    } catch (e: any) {
+      setErr(friendlyError(e?.message ?? "Promotion failed"));
     } finally {
       setBusy(null);
     }
@@ -491,15 +496,18 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
             </div>
           </div>
 
+          {toast ? (
+            <div className="mt-4 rounded-xl border border-emerald-500/40 bg-emerald-950/20 p-4 text-sm">
+              <div className="font-medium text-emerald-200">OK</div>
+              <div className="mt-1 text-hud-muted whitespace-pre-wrap">{toast}</div>
+            </div>
+          ) : null}
+
           {err ? (
             <div className="mt-4 rounded-xl border border-red-500/40 bg-red-950/20 p-4 text-sm">
               <div className="font-medium text-red-200">Fehler</div>
               <div className="mt-1 text-hud-muted whitespace-pre-wrap">{friendlyError(err)}</div>
             </div>
-          ) : null}
-
-          {toast ? (
-            <div className="mt-4 rounded-xl border border-hud-line/70 bg-black/20 p-3 text-sm">{toast}</div>
           ) : null}
         </HudCard>
 
