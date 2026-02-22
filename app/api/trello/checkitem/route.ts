@@ -31,8 +31,14 @@ export async function POST(req: Request) {
   const gate = await requireSignedIn(req);
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
-  const canToggle = !!(gate.session?.canSeeFE || gate.session?.canSeeUO || gate.session?.isAdmin);
-  if (!canToggle) return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  // Permissions
+  // - Trainings/FBS: FE + UO + Admin
+  // - Medaillen: FE + Admin
+  const canToggleTraining = !!(gate.session?.canSeeFE || gate.session?.canSeeUO || gate.session?.isAdmin);
+  const canToggleMedal = !!(gate.session?.canSeeFE || gate.session?.isAdmin);
+  if (!canToggleTraining && !canToggleMedal) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const cardId = String(body?.cardId ?? "");
