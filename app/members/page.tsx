@@ -19,6 +19,8 @@ type Marine = {
 
 type Payload = {
   marines: Marine[];
+  jediCards?: Marine[];
+  adjutantCards?: Marine[];
   trainings: string[];
   medals: string[];
   lists: { id: string; name: string }[];
@@ -89,6 +91,8 @@ export default function MembersPage() {
   const [minMedals, setMinMedals] = useState<number>(0);
   const [minTrainings, setMinTrainings] = useState<number>(0);
 
+  const [view, setView] = useState<"roster" | "jedi" | "adjutant">("roster");
+
   const load = async () => {
     setLoading(true);
     setErr(null);
@@ -116,16 +120,23 @@ export default function MembersPage() {
   const allTrainings = data?.trainings ?? [];
   const allMedals = data?.medals ?? [];
 
+  const baseMarines = useMemo(() => {
+    if (!data) return [] as Marine[];
+    if (view === "jedi") return (data.jediCards ?? []) as Marine[];
+    if (view === "adjutant") return (data.adjutantCards ?? []) as Marine[];
+    return (data.marines ?? []) as Marine[];
+  }, [data, view]);
+
   const ranks = useMemo(() => {
     const rs = new Set<string>();
-    for (const m of data?.marines ?? []) rs.add(m.rank);
+    for (const m of baseMarines) rs.add(m.rank);
     return [...rs].sort((a, b) => {
       const ai = rankIndex(a);
       const bi = rankIndex(b);
       if (ai !== bi) return ai - bi;
       return a.localeCompare(b, "de");
     });
-  }, [data]);
+  }, [baseMarines]);
 
   const listsByRankIndex = useMemo(() => {
     const lists = data?.lists ?? [];
@@ -200,7 +211,7 @@ const res = await fetch("/api/trello/promote", {
   };
 
   const filtered = useMemo(() => {
-    const marines = data?.marines ?? [];
+    const marines = baseMarines;
     const nameQ = norm(qName);
 
     return marines
@@ -331,41 +342,44 @@ const res = await fetch("/api/trello/promote", {
               </button>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <a
+                <button
+                  className={["btn", "btn-ghost", view === "roster" ? "border border-hud-line/80" : ""].join(" ")}
+                  type="button"
+                  onClick={() => setView("roster")}
+                  title="Standard Roster"
+                >
+                  Roster
+                </button>
+
+                <button
                   className={[
                     "btn",
                     "btn-ghost",
+                    view === "jedi" ? "border border-hud-line/80" : "",
                     data?.jediListId ? "" : "opacity-50 cursor-not-allowed",
                   ].join(" ")}
-                  href={data?.jediListId ? `https://trello.com/l/${data.jediListId}` : undefined}
-                  target={data?.jediListId ? "_blank" : undefined}
-                  rel={data?.jediListId ? "noreferrer" : undefined}
-                  aria-disabled={!data?.jediListId}
-                  onClick={(e) => {
-                    if (!data?.jediListId) e.preventDefault();
-                  }}
-                  title={data?.jediListId ? "Jedi Trello-Liste öffnen" : "TRELLO_JEDI_LIST_ID fehlt"}
+                  type="button"
+                  onClick={() => data?.jediListId && setView("jedi")}
+                  disabled={!data?.jediListId}
+                  title={data?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
                 >
                   Jedi
-                </a>
+                </button>
 
-                <a
+                <button
                   className={[
                     "btn",
                     "btn-ghost",
+                    view === "adjutant" ? "border border-hud-line/80" : "",
                     data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed",
                   ].join(" ")}
-                  href={data?.adjutantListId ? `https://trello.com/l/${data.adjutantListId}` : undefined}
-                  target={data?.adjutantListId ? "_blank" : undefined}
-                  rel={data?.adjutantListId ? "noreferrer" : undefined}
-                  aria-disabled={!data?.adjutantListId}
-                  onClick={(e) => {
-                    if (!data?.adjutantListId) e.preventDefault();
-                  }}
-                  title={data?.adjutantListId ? "Adjutanten Trello-Liste öffnen" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
+                  type="button"
+                  onClick={() => data?.adjutantListId && setView("adjutant")}
+                  disabled={!data?.adjutantListId}
+                  title={data?.adjutantListId ? "Adjutanten verwalten" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
                 >
                   Adjutanten
-                </a>
+                </button>
 
                 <button className="btn btn-ghost" type="button" onClick={load}>
                   Reload
@@ -396,7 +410,7 @@ const res = await fetch("/api/trello/promote", {
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs">
                       {a.absences.map((ab: { label: string; from?: string | null; to?: string | null }, idx: number) => (
-                        <span key={idx} className="chip">{ab.label} • {ab.from ?? "?"} → {ab.to ?? "?"}</span>
+                        <span key={idx} className="rounded-full border border-orange-500 bg-orange-500/15 px-3 py-1 text-xs text-orange-300">{ab.label} • {ab.from ?? "?"} → {ab.to ?? "?"}</span>
                       ))}
                     </div>
                   </div>
