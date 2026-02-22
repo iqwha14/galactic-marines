@@ -1,4 +1,5 @@
 import { getToken } from "next-auth/jwt";
+import { supabaseAdmin } from "@/lib/supabase";
 import { NextRequest } from "next/server";
 import { cookies, headers } from "next/headers";
 
@@ -16,6 +17,40 @@ export type GateResult = {
   error?: string;
   session?: GateSession;
 };
+
+
+type DbPerms = {
+  display_name?: string | null;
+  is_admin?: boolean | null;
+  is_editor?: boolean | null;
+  can_see_uo?: boolean | null;
+  can_see_fe?: boolean | null;
+};
+
+async function fetchDbPerms(discordId: string): Promise<DbPerms | null> {
+  try {
+    const sb = supabaseAdmin();
+    const { data, error } = await sb
+      .from("gm_user_permissions")
+      .select("display_name,is_admin,is_editor,can_see_uo,can_see_fe")
+      .eq("discord_id", discordId)
+      .maybeSingle();
+    if (error) return null;
+    return data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function parseAllowList(envName: string): Set<string> {
+  const raw = (process.env[envName] ?? "").trim();
+  if (!raw) return new Set();
+  return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+}
+
+const ADMIN_IDS = parseAllowList("ADMIN_DISCORD_IDS");
+const EDITOR_IDS = parseAllowList("EDITOR_DISCORD_IDS");
+const UO_IDS = parseAllowList("UO_DISCORD_IDS");
 
 function makeNextRequestFromContext(): NextRequest {
   const h = new Headers(headers());
@@ -40,10 +75,19 @@ async function getGate(req?: Request): Promise<GateResult> {
 
     if (!discordId) return { ok: false, status: 401, error: "Not signed in" };
 
-    const isAdmin = !!(token as any)?.isAdmin;
-    const canSeeFE = !!(token as any)?.canSeeFE;
-    const canSeeUO = !!(token as any)?.canSeeUO;
-    const name = String((token as any)?.name ?? "");
+    const db = await fetchDbPerms(discordId);
+
+    const isAdmin =
+      !!(token as any)?.isAdmin || ADMIN_IDS.has(discordId) || (db?.is_admin ?? false);
+
+    const canSeeFE =
+      isAdmin || !!(token as any)?.canSeeFE || (db?.can_see_fe ?? false);
+
+    const canSeeUO =
+      isAdmin || !!(token as any)?.canSeeUO || UO_IDS.has(discordId) || (db?.can_see_uo ?? false);
+
+    const nameFromToken = String((token as any)?.name ?? "");
+    const name = String(db?.display_name ?? nameFromToken ?? "");
 
     return {
       ok: true,

@@ -526,8 +526,10 @@ export default function OpsPanel() {
           {toast ? (
             <div
               className={[
-                "pointer-events-none absolute right-0 top-0 z-20 w-full max-w-[520px]",
+                "pointer-events-none fixed right-6 top-6 z-[9999] w-auto",
                 "rounded-2xl border px-4 py-3 text-sm shadow-lg",
+                "max-w-[min(420px,calc(100vw-48px))]",
+                "animate-[gmToastIn_.18s_ease-out]",
                 toast.kind === "ok" ? "border-marine-500/40 bg-marine-950/30" : "border-red-500/40 bg-red-950/30",
               ].join(" ")}
             >

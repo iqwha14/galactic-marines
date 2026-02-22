@@ -30,6 +30,8 @@ type Payload = {
   medals: string[];
   adjutantListId: string | null;
   adjutantCards: Marine[];
+  jediListId: string | null;
+  jediCards: Marine[];
   absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: Absence[] }[];
 };
 
@@ -37,7 +39,7 @@ type LogEntry = { id: string; when: string; who: string; kind: string; title: st
 
 const DRIVE_FOLDER_ID = "1EHiuwPpPLBC-Ti9xCNUnijyFxzVbwwTH";
 
-type Tab = "members" | "absences" | "docs" | "ops" | "uo" | "adjutant" | "log";
+type Tab = "members" | "absences" | "docs" | "ops" | "uo" | "adjutant" | "jedi" | "log";
 
 
 function HudCard({
@@ -276,16 +278,6 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-const [toast, setToast] = useState<{ msg: string; kind: "ok" | "err" } | null>(null);
-useEffect(() => {
-  if (!toast) return;
-  const t = setTimeout(() => setToast(null), 2400);
-  return () => clearTimeout(t);
-}, [toast]);
-
-const showOk = (msg: string) => setToast({ msg, kind: "ok" });
-const showErr = (msg: string) => setToast({ msg, kind: "err" });
-
   const [search, setSearch] = useState("");
   const [rank, setRank] = useState<string>("");
   const [mode, setMode] = useState<"trainings" | "medals">("trainings");
@@ -355,11 +347,6 @@ const showErr = (msg: string) => setToast({ msg, kind: "err" });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || j?.details || "Update failed");
       await load();
-      showOk(nextState === "complete" ? "✅ Abgehakt." : "↩️ Revidiert.");
-    } catch (e: any) {
-      const msg = friendlyError(e?.message ?? "Update failed");
-      setErr(msg);
-      showErr("❌ " + msg);
     } finally {
       setBusy(null);
     }
@@ -376,11 +363,6 @@ const showErr = (msg: string) => setToast({ msg, kind: "err" });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || j?.details || "Promotion failed");
       await load();
-      showOk("✅ Rang geändert.");
-    } catch (e: any) {
-      const msg = friendlyError(e?.message ?? "Promotion failed");
-      setErr(msg);
-      showErr("❌ " + msg);
     } finally {
       setBusy(null);
     }
@@ -404,34 +386,6 @@ const showErr = (msg: string) => setToast({ msg, kind: "err" });
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10">
-
-{toast ? (
-  <div
-    data-testid="gm-toast"
-    className={[
-      "fixed top-6 right-6 z-[9999] rounded-2xl border px-4 py-3 text-sm shadow-hud",
-      "max-w-[min(420px,calc(100vw-48px))]",
-      "animate-[gmToastIn_.18s_ease-out]",
-      toast.kind === "ok"
-        ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
-        : "border-rose-400/40 bg-rose-500/10 text-rose-100",
-    ].join(" ")}
-  >
-    {toast.msg}
-    <style jsx>{`
-      @keyframes gmToastIn {
-        from {
-          opacity: 0;
-          transform: translateY(-6px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-    `}</style>
-  </div>
-) : null}
       <header className="mb-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -583,7 +537,34 @@ const showErr = (msg: string) => setToast({ msg, kind: "err" });
               </div>
             </HudCard>
 
-            <HudCard title="Einheitsmitglieder">
+            <HudCard
+              title="Einheitsmitglieder"
+              right={
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className={["btn", "btn-ghost", data?.jediListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
+                    onClick={() => data?.jediListId && setTab("jedi")}
+                    disabled={!data?.jediListId}
+                    title={data?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
+                  >
+                    Jedi
+                  </button>
+                  <button
+                    type="button"
+                    className={["btn", "btn-ghost", data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
+                    onClick={() => data?.adjutantListId && setTab("adjutant")}
+                    disabled={!data?.adjutantListId}
+                    title={data?.adjutantListId ? "Adjutanten verwalten" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
+                  >
+                    Adjutanten
+                  </button>
+                  <button type="button" className="btn btn-ghost" onClick={load}>
+                    Reload
+                  </button>
+                </div>
+              }
+            >
               <MemberTable
                 rows={filtered}
                 data={data}
@@ -689,6 +670,26 @@ const showErr = (msg: string) => setToast({ msg, kind: "err" });
             </div>
           </HudCard>
         ) : null}
+
+        {tab === "jedi" ? (
+          <>
+            <HudCard title="Jedi">
+              <MemberTable
+                rows={data?.jediCards ?? []}
+                data={data}
+                mode={mode}
+                canEdit={canEdit}
+                expanded={expanded}
+                setExpanded={setExpanded}
+                busy={busy}
+                toggleItem={toggleItem}
+                promote={promote}
+                setErr={setErr}
+              />
+            </HudCard>
+          </>
+        ) : null}
+
 
         {tab === "log" ? (
           <HudCard title="Log Historie (Board Actions)">

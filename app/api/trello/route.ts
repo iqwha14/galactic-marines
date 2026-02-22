@@ -136,6 +136,7 @@ export async function GET() {
     const boardId = requiredEnv("TRELLO_BOARD_ID");
     const { key, token } = trelloBaseParams();
     const adjListId = (process.env.TRELLO_ADJUTANT_LIST_ID ?? "").trim();
+    const jediListId = (process.env.TRELLO_JEDI_LIST_ID ?? "").trim();
 
     // 1) Board labels (ID -> Name). This makes labels robust even if cards don't embed label objects.
     const labelsUrl = new URL(`https://api.trello.com/1/boards/${boardId}/labels`);
@@ -219,6 +220,17 @@ export async function GET() {
     });
 
     const isSoldier = (m: any) => {
+      // Jedi/Adjutanten sollen wie normale Soldaten behandelt werden (für Verwaltung + Abmeldungen),
+      // auch wenn der Listenname normalerweise als "Non-Soldier" gilt.
+      if (jediListId && m.idList === jediListId) {
+        const hasAnyChecklist = (m.trainings?.length ?? 0) > 0 || (m.medals?.length ?? 0) > 0;
+        return isProbablySoldierCard(m.name) || hasAnyChecklist;
+      }
+      if (adjListId && m.idList === adjListId) {
+        const hasAnyChecklist = (m.trainings?.length ?? 0) > 0 || (m.medals?.length ?? 0) > 0;
+        return isProbablySoldierCard(m.name) || hasAnyChecklist;
+      }
+
       if (isNonSoldierList(m.rank)) return false;
       const hasAnyChecklist = (m.trainings?.length ?? 0) > 0 || (m.medals?.length ?? 0) > 0;
       return isProbablySoldierCard(m.name) || hasAnyChecklist;
@@ -227,6 +239,7 @@ export async function GET() {
     // Roster
     let marines = raw.filter((m) => {
       if (adjListId && m.idList === adjListId) return false;
+      if (jediListId && m.idList === jediListId) return false;
       return isSoldier(m);
     });
 
@@ -259,6 +272,8 @@ export async function GET() {
     }
 
     const adjutantCards = adjListId ? raw.filter((m) => m.idList === adjListId).filter(isSoldier) : [];
+
+    const jediCards = jediListId ? raw.filter((m) => m.idList === jediListId).filter(isSoldier) : [];
 
     const absent = raw
       .filter(isSoldier)
