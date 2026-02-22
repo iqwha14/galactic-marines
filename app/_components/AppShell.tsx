@@ -303,6 +303,10 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
     setData(j);
   }
 
+  const loadTrello = () => {
+    load().catch((e: any) => setErr(friendlyError(e?.message ?? "Unknown error")));
+  };
+
   useEffect(() => {
     load().catch((e: any) => setErr(friendlyError(e?.message ?? "Unknown error")));
   }, []);
