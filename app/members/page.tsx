@@ -22,7 +22,11 @@ type Payload = {
   trainings: string[];
   medals: string[];
   lists: { id: string; name: string }[];
-  absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: { label: string; from?: string; to?: string }[] }[];
+  absent: any[];
+
+  // 👇 DAS HIER HINZUFÜGT
+  jediListId?: string | null;
+  adjutantListId?: string | null;
 };
 
 const norm = (s: string) => (s ?? "").trim().toLowerCase();
