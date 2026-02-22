@@ -81,17 +81,34 @@ export default function CommandDeck() {
     let w = 0;
     let h = 0;
 
-    const stars = Array.from({ length: 190 }, () => ({
+    const makeStars = (count: number) =>
+      Array.from({ length: count }, () => ({
+        x: Math.random(),
+        y: Math.random(),
+        z: Math.random(),
+        s: 0.35 + Math.random() * 1.1,
+        v: 0.06 + Math.random() * 0.22,
+      }));
+
+    const desiredCount = () => {
+      const area = window.innerWidth * window.innerHeight;
+      // Fewer stars on big screens too (avoid "snowstorm")
+      return Math.max(45, Math.min(90, Math.floor(area / 52000)));
+    };
+
+    let stars = makeStars(desiredCount());
       x: Math.random(),
       y: Math.random(),
       z: Math.random(),
       s: 0.4 + Math.random() * 1.5,
-      v: 0.03 + Math.random() * 0.12,
+      v: 0.14 + Math.random() * 0.6,
     }));
 
     const resize = () => {
       w = canvas.width = Math.floor(window.innerWidth * devicePixelRatio);
       h = canvas.height = Math.floor(window.innerHeight * devicePixelRatio);
+      const want = desiredCount();
+      if (stars.length !== want) stars = makeStars(want);
     };
     resize();
     window.addEventListener("resize", resize);
@@ -107,7 +124,7 @@ export default function CommandDeck() {
 
       ctx.fillStyle = "rgba(255,255,255,0.7)";
       for (const st of stars) {
-        st.y += (st.v / 900) * (h / devicePixelRatio);
+        st.y += (st.v / 1600) * (h / devicePixelRatio);
         if (st.y > 1) {
           st.y = 0;
           st.x = Math.random();

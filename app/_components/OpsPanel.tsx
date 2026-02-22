@@ -527,9 +527,8 @@ export default function OpsPanel() {
             <div
               className={[
                 "pointer-events-none fixed right-6 top-6 z-[9999] w-auto",
-                "rounded-2xl border px-4 py-3 text-sm shadow-lg",
-                "max-w-[min(420px,calc(100vw-48px))]",
-                "animate-[gmToastIn_.18s_ease-out]",
+                                "max-w-[min(420px,calc(100vw-48px))]",
+"rounded-2xl border px-4 py-3 text-sm shadow-lg",
                 toast.kind === "ok" ? "border-marine-500/40 bg-marine-950/30" : "border-red-500/40 bg-red-950/30",
               ].join(" ")}
             >

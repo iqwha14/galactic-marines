@@ -220,8 +220,8 @@ export async function GET() {
     });
 
     const isSoldier = (m: any) => {
-      // Jedi/Adjutanten sollen wie normale Soldaten behandelt werden (für Verwaltung + Abmeldungen),
-      // auch wenn der Listenname normalerweise als "Non-Soldier" gilt.
+      // Jedi/Adjutanten sollen wie normale Soldaten behandelt werden,
+      // auch wenn der Listenname sonst als Nicht-Soldat erkannt wird.
       if (jediListId && m.idList === jediListId) {
         const hasAnyChecklist = (m.trainings?.length ?? 0) > 0 || (m.medals?.length ?? 0) > 0;
         return isProbablySoldierCard(m.name) || hasAnyChecklist;
@@ -272,8 +272,8 @@ export async function GET() {
     }
 
     const adjutantCards = adjListId ? raw.filter((m) => m.idList === adjListId).filter(isSoldier) : [];
-
     const jediCards = jediListId ? raw.filter((m) => m.idList === jediListId).filter(isSoldier) : [];
+
 
     const absent = raw
       .filter(isSoldier)
@@ -296,6 +296,7 @@ export async function GET() {
 
     const marinesPublic = marines.map(({ idList, unitOrder, _labelNames, ...rest }: any) => rest);
     const adjPublic = adjutantCards.map(({ idList, unitOrder, _labelNames, ...rest }: any) => rest);
+    const jediPublic = jediCards.map(({ idList, unitOrder, _labelNames, ...rest }: any) => rest);
 
     // Debug block: helps verify labels are read (keep small)
     const debug = {
@@ -311,6 +312,8 @@ export async function GET() {
       medals: [...medalNames].sort((a, b) => a.localeCompare(b, "de")),
       adjutantListId: adjListId || null,
       adjutantCards: adjPublic,
+      jediListId: jediListId || null,
+      jediCards: jediPublic,
       absent,
       debug,
     });

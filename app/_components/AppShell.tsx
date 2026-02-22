@@ -30,8 +30,6 @@ type Payload = {
   medals: string[];
   adjutantListId: string | null;
   adjutantCards: Marine[];
-  jediListId: string | null;
-  jediCards: Marine[];
   absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: Absence[] }[];
 };
 
@@ -538,33 +536,33 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
             </HudCard>
 
             <HudCard
-              title="Einheitsmitglieder"
-              right={
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className={["btn", "btn-ghost", data?.jediListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
-                    onClick={() => data?.jediListId && setTab("jedi")}
-                    disabled={!data?.jediListId}
-                    title={data?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
-                  >
-                    Jedi
-                  </button>
-                  <button
-                    type="button"
-                    className={["btn", "btn-ghost", data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
-                    onClick={() => data?.adjutantListId && setTab("adjutant")}
-                    disabled={!data?.adjutantListId}
-                    title={data?.adjutantListId ? "Adjutanten verwalten" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
-                  >
-                    Adjutanten
-                  </button>
-                  <button type="button" className="btn btn-ghost" onClick={load}>
-                    Reload
-                  </button>
-                </div>
-              }
+        title="Einheitsmitglieder"
+        right={
+          <div className="flex items-center gap-2">
+            <button
+              className={["btn", "btn-ghost", data?.jediListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
+              onClick={() => data?.jediListId && setTab("jedi")}
+              disabled={!data?.jediListId}
+              title={data?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
+              type="button"
             >
+              Jedi
+            </button>
+            <button
+              className={["btn", "btn-ghost", data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
+              onClick={() => data?.adjutantListId && setTab("adjutant")}
+              disabled={!data?.adjutantListId}
+              title={data?.adjutantListId ? "Adjutanten verwalten" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
+              type="button"
+            >
+              Adjutanten
+            </button>
+            <button className="btn btn-ghost" onClick={loadTrello} type="button">
+              Reload
+            </button>
+          </div>
+        }
+      >
               <MemberTable
                 rows={filtered}
                 data={data}
@@ -671,25 +669,24 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
           </HudCard>
         ) : null}
 
-        {tab === "jedi" ? (
-          <>
-            <HudCard title="Jedi">
-              <MemberTable
-                rows={data?.jediCards ?? []}
-                data={data}
-                mode={mode}
-                canEdit={canEdit}
-                expanded={expanded}
-                setExpanded={setExpanded}
-                busy={busy}
-                toggleItem={toggleItem}
-                promote={promote}
-                setErr={setErr}
-              />
-            </HudCard>
-          </>
-        ) : null}
-
+{tab === "jedi" ? (
+  <HudCard title="Jedi Menü">
+    <div className="mt-4">
+      <MemberTable
+        rows={data?.jediCards ?? []}
+        data={data}
+        mode={mode}
+        canEdit={canEdit}
+        expanded={expanded}
+        setExpanded={setExpanded}
+        busy={busy}
+        toggleItem={toggleItem}
+        promote={promote}
+        setErr={setErr}
+      />
+    </div>
+  </HudCard>
+) : null}
 
         {tab === "log" ? (
           <HudCard title="Log Historie (Board Actions)">
