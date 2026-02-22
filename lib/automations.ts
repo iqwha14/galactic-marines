@@ -29,7 +29,10 @@ type AktenSettingsRow = {
 };
 
 type AktenPoolRow = {
-  name: string;
+  name: string; // stable key, e.g. 'user:123' or 'role:456'
+  mention_type: "user" | "role";
+  mention_id: string | null;
+  label: string | null;
   times_assigned: number;
   last_assigned_at: string | null;
 };
@@ -37,6 +40,17 @@ type AktenPoolRow = {
 function nowIso(d = new Date()): string {
   return d.toISOString();
 }
+
+
+type MentionTarget = Pick<AktenPoolRow, "mention_type" | "mention_id" | "label" | "name">;
+
+function mentionOf(t: MentionTarget): string {
+  const id = String(t.mention_id ?? "").trim();
+  if (id) return t.mention_type === "role" ? `<@&${id}>` : `<@${id}>`;
+  // Fallback: show label or key if IDs are missing
+  return String(t.label ?? t.name ?? "Unbekannt");
+}
+
 
 /**
  * Webhook-only automations:
@@ -230,8 +244,8 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
 
         await sb.from("gm_akten_history").insert({
           mode: "auto",
-          chosen_primary_name: primary.name,
-          chosen_backup_name: backup?.name ?? null,
+          chosen_primary_name: String(primary.label ?? primary.name),
+          chosen_backup_name: backup ? String(backup.label ?? backup.name) : null,
           poll_created_at: s.active_poll_created_at,
         });
       } else {

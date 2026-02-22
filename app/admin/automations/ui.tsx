@@ -29,7 +29,10 @@ type AktenSettings = {
 };
 
 type AktenPool = {
-  name: string;
+  name: string; // key: user:ID or role:ID
+  mention_type: "user" | "role";
+  mention_id: string | null;
+  label: string | null;
   times_assigned: number;
   last_assigned_at: string | null;
 };
@@ -219,7 +222,7 @@ export default function AutomationsClient() {
       const res = await fetch("/api/admin/automations/akten", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ op: "add_pool", name: poolAdd }),
+        body: JSON.stringify({ op: "add_pool", input: poolAdd }),
       }).then((r) => r.json());
       if (!res?.ok) throw new Error(res?.error ?? "Add failed");
       setPoolAdd("");
@@ -436,7 +439,8 @@ export default function AutomationsClient() {
             <div className="rounded-xl border border-hud-line/70 bg-black/20 p-4">
               <div className="font-medium">Namenspool (fair)</div>
               <div className="mt-3 grid gap-2">
-                <input className="hud-input" placeholder="Name (z.B. 'XY')" value={poolAdd} onChange={(e) => setPoolAdd(e.target.value)} />
+                <input className="hud-input" placeholder="user:123456789012345678|XY  oder  role:987654321098765432|Offiziere  oder  <@123>|XY" value={poolAdd} onChange={(e) => setPoolAdd(e.target.value)} />
+                <div className="text-xs text-hud-muted">Hinweis: Discord IDs bekommst du mit Developer Mode → Rechtsklick User/Rolle → ID kopieren. Mentions werden per Webhook gesendet (ohne Bot).</div>
                 <div className="flex items-center gap-2">
                   <button className="btn btn-accent" onClick={addPool} disabled={busy || !poolAdd.trim()} type="button">Hinzufügen</button>
                   <button className="btn btn-ghost" onClick={resetFairness} disabled={busy} type="button">Fairness Reset</button>
@@ -450,8 +454,16 @@ export default function AutomationsClient() {
                     .map((u) => (
                       <div key={u.name} className="rounded-xl border border-hud-line/60 bg-black/10 p-3 flex items-center justify-between gap-3">
                         <div>
-                          <div className="text-sm font-medium">{u.name}</div>
-                          <div className="text-xs text-hud-muted">times: {u.times_assigned ?? 0} · last: {fmt(u.last_assigned_at)}</div>
+                          <div className="text-sm font-medium">{u.label ?? u.name}</div>
+                          <div className="text-xs text-hud-muted">
+                            {u.mention_id ? (
+                              <span>
+                                mention: <code className="text-white/80">{u.mention_type === "role" ? `<@&${u.mention_id}>` : `<@${u.mention_id}>`}</code>
+                                {" · "}
+                              </span>
+                            ) : null}
+                            times: {u.times_assigned ?? 0} · last: {fmt(u.last_assigned_at)}
+                          </div>
                         </div>
                         <button className="btn btn-ghost" onClick={() => removePool(u.name)} disabled={busy} type="button">Remove</button>
                       </div>

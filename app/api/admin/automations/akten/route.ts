@@ -14,6 +14,35 @@ function clampDow(d: any): number {
   return n;
 }
 
+
+function parsePoolInput(input: any): { key: string; mention_type: "user" | "role"; mention_id: string; label?: string } | null {
+  const raw = String(input ?? "").trim();
+  if (!raw) return null;
+
+  const [left, labelRaw] = raw.split("|").map((s) => s.trim());
+  const label = labelRaw || undefined;
+
+  // Allowed formats:
+  //  - user:123456789012345678|Label
+  //  - role:123456789012345678|Label
+  //  - <@123...>|Label   or <@!123...>|Label
+  //  - <@&123...>|Label
+  //  - 123456789012345678|Label  (defaults to user)
+  const mRole = left.match(/^<@&(\d+)>$/);
+  if (mRole) return { key: `role:${mRole[1]}`, mention_type: "role", mention_id: mRole[1], label };
+
+  const mUser = left.match(/^<@!?(\d+)>$/);
+  if (mUser) return { key: `user:${mUser[1]}`, mention_type: "user", mention_id: mUser[1], label };
+
+  const mTyped = left.match(/^(user|role):(\d+)$/i);
+  if (mTyped) return { key: `${mTyped[1].toLowerCase()}:${mTyped[2]}`, mention_type: mTyped[1].toLowerCase() as any, mention_id: mTyped[2], label };
+
+  const mDigits = left.match(/^(\d{6,})$/);
+  if (mDigits) return { key: `user:${mDigits[1]}`, mention_type: "user", mention_id: mDigits[1], label };
+
+  return null;
+}
+
 function clampInt(n: any, min: number, max: number, fallback: number): number {
   const v = Number(n);
   if (!Number.isFinite(v)) return fallback;

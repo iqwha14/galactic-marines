@@ -17,7 +17,7 @@ export async function sendDiscordWebhookMessage(params: {
   const res = await fetch(u, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: params.content }),
+    body: JSON.stringify({ content: params.content, allowed_mentions: { parse: ["users","roles"] } }),
   });
 
   if (!wait) return null;

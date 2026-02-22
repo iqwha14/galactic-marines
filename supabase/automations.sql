@@ -57,7 +57,11 @@ on conflict (id) do nothing;
 
 -- Fair name pool
 create table if not exists public.gm_akten_pool (
+  -- name is a stable key. For ping-capable entries we store e.g. 'user:123..' or 'role:456..'
   name text primary key,
+  mention_type text not null default 'user' check (mention_type in ('user','role')),
+  mention_id text,
+  label text,
   times_assigned int not null default 0,
   last_assigned_at timestamptz
 );
@@ -158,3 +162,39 @@ alter table public.gm_akten_history enable row level security;
 
 -- No policies on purpose: anon/authenticated cannot read/write.
 -- Access is expected via server-side routes using the Supabase service role.
+
+
+-- =========================
+-- MIGRATION: make akten pool ping-capable (user/role mentions)
+-- =========================
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='gm_akten_pool' and column_name='mention_type'
+  ) then
+    alter table public.gm_akten_pool add column mention_type text not null default 'user';
+  end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='gm_akten_pool' and column_name='mention_id'
+  ) then
+    alter table public.gm_akten_pool add column mention_id text;
+  end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='gm_akten_pool' and column_name='label'
+  ) then
+    alter table public.gm_akten_pool add column label text;
+  end if;
+
+  -- If old pool used just 'name', keep it as label
+  update public.gm_akten_pool
+    set label = coalesce(label, nullif(name,''))
+  where label is null;
+
+exception when others then
+  raise notice 'Migration notice: %', SQLERRM;
+end $$;
