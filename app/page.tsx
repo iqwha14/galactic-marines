@@ -97,12 +97,6 @@ export default function CommandDeck() {
     };
 
     let stars = makeStars(desiredCount());
-      x: Math.random(),
-      y: Math.random(),
-      z: Math.random(),
-      s: 0.4 + Math.random() * 1.5,
-      v: 0.14 + Math.random() * 0.6,
-    }));
 
     const resize = () => {
       w = canvas.width = Math.floor(window.innerWidth * devicePixelRatio);
@@ -129,8 +123,8 @@ export default function CommandDeck() {
           st.y = 0;
           st.x = Math.random();
           st.z = Math.random();
-          st.s = 0.4 + Math.random() * 1.5;
-          st.v = 0.14 + Math.random() * 0.6;
+          st.s = 0.35 + Math.random() * 1.1;
+          st.v = 0.06 + Math.random() * 0.22;
         }
         const px = st.x * w;
         const py = st.y * h;
