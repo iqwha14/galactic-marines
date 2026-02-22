@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requiredEnv, trelloBaseParams } from "../_lib/trello";
+import { requiredEnv, trelloBaseParams } from "../../_lib/trello";
 import { requireSignedIn, requireFE, requireAdmin, requireUO } from "@/lib/authz";
 
 export const runtime = "nodejs";
