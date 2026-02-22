@@ -24,8 +24,17 @@ export default function LogsPage() {
       const res = await fetch("/api/log", { cache: "no-store" });
       const text = await res.text();
       const json = parseJsonSafe(text);
+
       if (!res.ok) throw new Error(json?.error || json?.details || text || `Request failed (${res.status})`);
-      setRows(Array.isArray(json?.logs) ? json.logs : Array.isArray(json) ? json : json?.data ?? []);
+
+      const data =
+        (Array.isArray(json?.logs) && json.logs) ||
+        (Array.isArray(json?.entries) && json.entries) ||
+        (Array.isArray(json) && json) ||
+        (Array.isArray(json?.data) && json.data) ||
+        [];
+
+      setRows(data);
     } catch (e: any) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -51,17 +60,31 @@ export default function LogsPage() {
 
         <HudCard title="Letzte Einträge" right={<button className="btn btn-ghost" onClick={load} disabled={loading}>Reload</button>}>
           {loading ? <div className="text-hud-muted">Lade…</div> : null}
+
           <div className="mt-3 space-y-2">
-            {rows.map((r, idx) => (
-              <div key={idx} className="rounded-xl border border-hud-line/70 bg-black/20 p-3">
-                <div className="text-sm font-medium">{r.action ?? r.event ?? "log"}</div>
-                <div className="mt-1 text-xs text-hud-muted">
-                  {r.created_at ? new Date(r.created_at).toLocaleString("de-DE") : ""}
-                  {r.actor ? ` • actor: ${r.actor}` : r.actor_discord_id ? ` • actor: ${r.actor_discord_id}` : ""}
+            {rows.map((r, idx) => {
+              const created = r.created_at || r.when || r.date || null;
+              const actor = r.actor || r.who || r.actor_discord_id || null;
+              const title = r.action || r.title || r.event || "log";
+              const sub = r.event || r.kind || r.type || null;
+
+              return (
+                <div key={r.id ?? idx} className="rounded-xl border border-hud-line/70 bg-black/20 p-3">
+                  <div className="text-sm font-medium">{title}</div>
+                  <div className="mt-1 text-xs text-hud-muted">
+                    {created ? new Date(created).toLocaleString("de-DE") : ""}
+                    {actor ? ` • actor: ${actor}` : ""}
+                    {sub ? ` • ${sub}` : ""}
+                  </div>
+                  {r.meta ? (
+                    <pre className="mt-2 overflow-x-auto text-xs text-white/70">
+                      {JSON.stringify(r.meta, null, 2)}
+                    </pre>
+                  ) : null}
                 </div>
-                {r.meta ? <pre className="mt-2 overflow-x-auto text-xs text-white/70">{JSON.stringify(r.meta, null, 2)}</pre> : null}
-              </div>
-            ))}
+              );
+            })}
+
             {!rows.length && !loading ? <div className="text-hud-muted">Keine Logs.</div> : null}
           </div>
         </HudCard>
