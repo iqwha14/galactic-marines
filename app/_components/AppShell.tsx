@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import OpsPanel from "./OpsPanel";
@@ -195,7 +195,7 @@ function MemberTable({
                                 <button
                                   key={it.id}
                                   className={["text-left", busy === it.id ? "opacity-50" : ""].join(" ")}
-                                  onClick={() => toggleItem(m.id, it.id, it.state).catch((e: any) => setErr(friendlyError(e?.message ?? "Update failed")))}
+                                  onClick={() => toggleItem(m.id, it.id, it.state)}
                                   disabled={!canEdit || busy === it.id}
                                   title={canEdit ? "Klicken zum Umschalten" : "Nur Editor"}
                                   type="button"
@@ -217,7 +217,7 @@ function MemberTable({
                                 <button
                                   key={it.id}
                                   className={["text-left", busy === it.id ? "opacity-50" : ""].join(" ")}
-                                  onClick={() => toggleItem(m.id, it.id, it.state).catch((e: any) => setErr(friendlyError(e?.message ?? "Update failed")))}
+                                  onClick={() => toggleItem(m.id, it.id, it.state)}
                                   disabled={!canEdit || busy === it.id}
                                   title={canEdit ? "Klicken zum Umschalten" : "Nur Editor"}
                                   type="button"
@@ -241,7 +241,7 @@ function MemberTable({
                               onChange={(e) => {
                                 const listId = e.target.value;
                                 if (!listId) return;
-                                promote(m.id, listId).catch(() => {});
+                                promote(m.id, listId).catch((e: any) => setErr(friendlyError(e?.message ?? "Promotion failed")));
                                 e.target.value = "";
                               }}
                             >
@@ -276,6 +276,16 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+const [toast, setToast] = useState<{ msg: string; kind: "ok" | "err" } | null>(null);
+useEffect(() => {
+  if (!toast) return;
+  const t = setTimeout(() => setToast(null), 2400);
+  return () => clearTimeout(t);
+}, [toast]);
+
+const showOk = (msg: string) => setToast({ msg, kind: "ok" });
+const showErr = (msg: string) => setToast({ msg, kind: "err" });
+
   const [search, setSearch] = useState("");
   const [rank, setRank] = useState<string>("");
   const [mode, setMode] = useState<"trainings" | "medals">("trainings");
@@ -286,15 +296,6 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
 
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-
-  const [toast, setToast] = useState<{ msg: string; kind: "success" | "error" } | null>(null);
-  const toastTimer = useRef<number | null>(null);
-
-  function showToast(msg: string, kind: "success" | "error" = "success") {
-    setToast({ msg, kind });
-    if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2200);
-  }
 
   // UO tab
   const [uoHtml, setUoHtml] = useState<string | null>(null);
@@ -354,17 +355,15 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || j?.details || "Update failed");
       await load();
-      showToast(nextState === "complete" ? "✅ Aktualisiert." : "↩️ Revidiert.");
+      showOk(nextState === "complete" ? "✅ Abgehakt." : "↩️ Revidiert.");
     } catch (e: any) {
       const msg = friendlyError(e?.message ?? "Update failed");
       setErr(msg);
-      showToast(msg, "error");
-      throw e;
+      showErr("❌ " + msg);
     } finally {
       setBusy(null);
     }
   }
-
 
   async function promote(cardId: string, listId: string) {
     setBusy(cardId);
@@ -377,17 +376,15 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || j?.details || "Promotion failed");
       await load();
-      showToast("✅ Rang geändert.");
+      showOk("✅ Rang geändert.");
     } catch (e: any) {
       const msg = friendlyError(e?.message ?? "Promotion failed");
       setErr(msg);
-      showToast(msg, "error");
-      throw e;
+      showErr("❌ " + msg);
     } finally {
       setBusy(null);
     }
   }
-
 
   async function loadUoDoc() {
     setUoErr(null);
@@ -407,21 +404,20 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-10">
-      {toast ? (
-        <div className="fixed left-1/2 top-5 z-[100] -translate-x-1/2">
-          <div
-            className={[
-              "rounded-full border px-4 py-2 text-sm shadow-hud backdrop-blur",
-              toast.kind === "success"
-                ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
-                : "border-red-400/40 bg-red-500/15 text-red-100",
-            ].join(" ")}
-          >
-            {toast.msg}
-          </div>
-        </div>
-      ) : null}
 
+{toast ? (
+  <div
+    data-testid="gm-toast"
+    className={[
+      "fixed left-1/2 top-6 z-[9999] -translate-x-1/2 rounded-2xl border px-4 py-3 text-sm shadow-hud",
+      toast.kind === "ok"
+        ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100"
+        : "border-rose-400/40 bg-rose-500/10 text-rose-100",
+    ].join(" ")}
+  >
+    {toast.msg}
+  </div>
+) : null}
       <header className="mb-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
