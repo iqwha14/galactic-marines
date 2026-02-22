@@ -23,6 +23,7 @@ type Marine = {
 type TrelloList = { id: string; name: string };
 
 type Payload = {
+  [key: string]: any;
   marines: Marine[];
   ranks: string[];
   lists: TrelloList[];
@@ -30,6 +31,10 @@ type Payload = {
   medals: string[];
   adjutantListId: string | null;
   adjutantCards: Marine[];
+  /** Optional Trello list id for the Jedi roster (env: TRELLO_JEDI_LIST_ID) */
+  jediListId: string | null;
+  /** Members/cards that live in the Jedi list */
+  jediCards: Marine[];
   absent: { id: string; name: string; url: string; rank: string; unitGroup: string; absences: Absence[] }[];
 };
 
@@ -73,17 +78,17 @@ function Badge({ children }: { children: React.ReactNode }) {
 }
 
 function Pill({ label, state }: { label: string; state: "complete" | "incomplete" }) {
-  const complete = state === "complete";
+  const complete = state === "complete" || (state as any) === "done" || (state as any) === "checked" || (state as any) === "true" || (state as any) === true;
   return (
     <span
       className={[
         "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs",
         complete
-          ? "border-green-500/60 bg-green-500/10 text-green-200"
+          ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
           : "border-hud-line/70 bg-black/20 text-hud-muted",
       ].join(" ")}
     >
-      <span className={["h-1.5 w-1.5 rounded-full", complete ? "bg-green-400" : "bg-hud-line"].join(" ")} />
+      <span className={["h-1.5 w-1.5 rounded-full", complete ? "bg-emerald-400" : "bg-hud-line"].join(" ")} />
       {label}
     </span>
   );
@@ -299,6 +304,11 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
     setData(j);
   }
 
+
+  const loadTrello = () => {
+    load().catch((e: any) => setErr(friendlyError(e?.message ?? "Trello Load failed")));
+  };
+
   useEffect(() => {
     load().catch((e: any) => setErr(friendlyError(e?.message ?? "Unknown error")));
   }, []);
@@ -402,7 +412,7 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
               <span
                 className={[
                   "inline-flex h-2.5 w-2.5 rounded-full",
-                  status === "ONLINE" ? "bg-green-400" : status === "ERROR" ? "bg-red-400" : "bg-marine-500",
+                  status === "ONLINE" ? "bg-emerald-400" : status === "ERROR" ? "bg-red-400" : "bg-marine-500",
                   "shadow-[0_0_18px_rgba(68,24,38,.35)]",
                 ].join(" ")}
               />
@@ -529,18 +539,13 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
                 </label>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Badge>Total: {data?.marines.length ?? 0}</Badge>
-                <Badge>Gefiltert: {filtered.length}</Badge>
-              </div>
-
-              {/* Quick navigation / actions (unter dem Filter, immer sichtbar – auch mobil) */}
+              {/* Quick navigation / actions (unter dem Filter) */}
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <button
                   className={["btn", "btn-ghost", data?.jediListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
-                  onClick={() => data?.jediListId && setTab("jedi")}
-                  disabled={!data?.jediListId}
-                  title={data?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
+                  onClick={() => (data as any)?.jediListId && setTab("jedi")}
+                  disabled={!(data as any)?.jediListId}
+                  title={(data as any)?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
                   type="button"
                 >
                   Jedi
@@ -560,10 +565,42 @@ export default function AppShell({ defaultTab = "members" }: { defaultTab?: Tab 
                   Reload
                 </button>
               </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Badge>Total: {data?.marines.length ?? 0}</Badge>
+                <Badge>Gefiltert: {filtered.length}</Badge>
+              </div>
             </HudCard>
 
-            <HudCard title="Einheitsmitglieder">
-<MemberTable
+            <HudCard
+        title="Einheitsmitglieder"
+        right={
+          <div className="flex items-center gap-2">
+            <button
+              className={["btn", "btn-ghost", data?.jediListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
+              onClick={() => data?.jediListId && setTab("jedi")}
+              disabled={!data?.jediListId}
+              title={data?.jediListId ? "Jedi verwalten" : "TRELLO_JEDI_LIST_ID fehlt"}
+              type="button"
+            >
+              Jedi
+            </button>
+            <button
+              className={["btn", "btn-ghost", data?.adjutantListId ? "" : "opacity-50 cursor-not-allowed"].join(" ")}
+              onClick={() => data?.adjutantListId && setTab("adjutant")}
+              disabled={!data?.adjutantListId}
+              title={data?.adjutantListId ? "Adjutanten verwalten" : "TRELLO_ADJUTANT_LIST_ID fehlt"}
+              type="button"
+            >
+              Adjutanten
+            </button>
+            <button className="btn btn-ghost" onClick={loadTrello} type="button">
+              Reload
+            </button>
+          </div>
+        }
+      >
+              <MemberTable
                 rows={filtered}
                 data={data}
                 mode={mode}
