@@ -33,9 +33,10 @@ export async function POST(
         victim: parseVictim(line),
       }));
 
-    const { error } = await supabaseAdmin
-      .from("operation_killlogs")
-      .insert(inserts);
+    // supabaseAdmin ist eine Factory-Funktion -> erst Client holen
+    const sb = supabaseAdmin();
+
+    const { error } = await sb.from("operation_killlogs").insert(inserts);
 
     if (error) {
       console.error(error);
