@@ -143,6 +143,47 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     killlogs = [];
   }
 
+  // MVP votes are optional (table might not exist yet in some installs)
+  let mvp: any = null;
+  try {
+    const { data: votes } = await sb
+      .from("operation_mvp_votes")
+      .select("voter_discord_id, mvp_card_id, created_at")
+      .eq("operation_id", id);
+
+    const counts = new Map<string, number>();
+    for (const v of votes ?? []) {
+      const cid = String((v as any)?.mvp_card_id ?? "").trim();
+      if (!cid) continue;
+      counts.set(cid, (counts.get(cid) ?? 0) + 1);
+    }
+    const countsArr = [...counts.entries()]
+      .map(([marine_card_id, votes]) => ({ marine_card_id, votes }))
+      .sort((a, b) => b.votes - a.votes);
+
+    // Eligible voters = participants that have a gm_unit_members mapping
+    const participantCardIds = (participants ?? []).map((p: any) => String(p?.marine_card_id ?? "").trim()).filter(Boolean);
+    let eligible = 0;
+    if (participantCardIds.length) {
+      const { data: memberMap } = await sb
+        .from("gm_unit_members")
+        .select("discord_id, marine_card_id")
+        .in("marine_card_id", participantCardIds);
+      eligible = (memberMap ?? []).filter((m: any) => String(m?.discord_id ?? "").trim()).length;
+    }
+
+    mvp = {
+      announced_at: (op as any)?.mvp_announced_at ?? null,
+      mvp_card_id: (op as any)?.mvp_card_id ?? null,
+      counts: countsArr,
+      eligible,
+      voted: new Set((votes ?? []).map((v: any) => String((v as any)?.voter_discord_id ?? "").trim()).filter(Boolean)).size,
+      votes: votes ?? [],
+    };
+  } catch {
+    mvp = null;
+  }
+
   return NextResponse.json({
     operation: op,
     participants: participants ?? [],
@@ -150,6 +191,7 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     marineRatings: marineRatingsEnriched,
     reports: reports ?? [],
     killlogs,
+    mvp,
   });
 }
 

@@ -87,6 +87,22 @@ create index if not exists idx_operations_start_at on public.operations(start_at
 create index if not exists idx_participants_op on public.operation_participants(operation_id);
 create index if not exists idx_reports_op on public.operation_reports(operation_id);
 
+-- MVP Voting
+-- Each participant votes once per operation. When all eligible voters have voted, the app auto-announces the MVP.
+alter table public.operations add column if not exists mvp_card_id text null;
+alter table public.operations add column if not exists mvp_announced_at timestamptz null;
+
+create table if not exists public.operation_mvp_votes (
+  operation_id uuid not null references public.operations(id) on delete cascade,
+  voter_discord_id text not null,
+  mvp_card_id text not null,
+  created_at timestamptz not null default now(),
+  primary key (operation_id, voter_discord_id)
+);
+
+create index if not exists idx_mvp_votes_op on public.operation_mvp_votes(operation_id);
+create index if not exists idx_mvp_votes_created on public.operation_mvp_votes(created_at desc);
+
 -- Storage (manual):
 -- 1) Supabase -> Storage -> Create bucket: operation-images
 -- 2) Make bucket PUBLIC (so we can show images via public URL)

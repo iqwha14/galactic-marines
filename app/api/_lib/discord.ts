@@ -111,3 +111,30 @@ export async function sendDiscordMedalEmbed(params: {
 
   await postEmbedsTo(process.env.DISCORD_WEBHOOK_TRAINING_URL, [embed]);
 }
+
+export async function sendDiscordMvpEmbed(params: {
+  operationTitle: string;
+  operationId?: string;
+  mvpName: string;
+  votes: number;
+  totalVotes: number;
+  timestamp?: string;
+}) {
+  const embed: Embed = {
+    title: "🌟 MVP gewählt",
+    color: 0xf1c40f,
+    fields: [
+      { name: "Einsatz", value: safe(params.operationTitle), inline: false },
+      { name: "MVP", value: safe(params.mvpName), inline: true },
+      { name: "Stimmen", value: `${params.votes}/${params.totalVotes}`, inline: true },
+    ],
+    timestamp: params.timestamp ?? isoNow(),
+  };
+
+  if (params.operationId) {
+    embed.fields = [...(embed.fields ?? []), { name: "Operation ID", value: safe(params.operationId), inline: false }];
+  }
+
+  // Dedicated MVP webhook if set; otherwise fall back to the main one.
+  await postEmbedsTo(process.env.DISCORD_WEBHOOK_MVP_URL || process.env.DISCORD_WEBHOOK_URL, [embed]);
+}

@@ -149,6 +149,7 @@ export default function OpsPanel() {
     ratings: any[];
     marineRatings: any[];
     killlogs: any[];
+    mvp: any;
   } | null>(null);
 
   const [myMemberCardId, setMyMemberCardId] = useState<string>("");
@@ -188,6 +189,10 @@ export default function OpsPanel() {
   const [repTitle, setRepTitle] = useState("");
   const [repBody, setRepBody] = useState("");
 
+  // MVP voting
+  const [mvpPick, setMvpPick] = useState<string>("");
+  const [mvpBusy, setMvpBusy] = useState(false);
+
   // ✅ Killlogs: nur Logs (Copy/Paste), kein manuelles Todes-Feld
   const [killText, setKillText] = useState<string>("");
 
@@ -223,6 +228,7 @@ export default function OpsPanel() {
       ratings: j.ratings ?? [],
       marineRatings: j.marineRatings ?? [],
       killlogs: j.killlogs ?? [],
+      mvp: j.mvp ?? null,
     });
   }
 
@@ -262,6 +268,11 @@ export default function OpsPanel() {
   }, [selected?.id]);
 
   useEffect(() => {
+    // reset MVP pick when switching operations
+    setMvpPick("");
+  }, [selected?.id]);
+
+  useEffect(() => {
     if (!(isAdmin || isFE)) return;
     if (activeTab !== "bewertungen") return;
     setErr(null);
@@ -273,6 +284,15 @@ export default function OpsPanel() {
   }, [activeTab, isAdmin, isFE]);
 
   const rosterById = useMemo(() => new Map(roster.map((m) => [m.id, m])), [roster]);
+
+  useEffect(() => {
+    if (mvpPick) return;
+    if (!myMemberCardId) return;
+    const parts = detail?.participants ?? [];
+    if (!parts.length) return;
+    const first = parts.map((p) => p.marine_card_id).find((cid) => cid && cid !== myMemberCardId);
+    if (first) setMvpPick(first);
+  }, [detail?.participants, myMemberCardId, mvpPick]);
 
   const rosterSortedByRank = useMemo(() => {
     const copy = [...roster];
@@ -521,6 +541,30 @@ export default function OpsPanel() {
       setToast({ kind: "err", msg: String(e?.message ?? e) });
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function submitMvpVote() {
+    if (!selected) return;
+    if (!mvpPick) return;
+    setErr(null);
+    setMvpBusy(true);
+    try {
+      const res = await fetch(`/api/ops/${selected.id}/mvp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mvp_card_id: mvpPick }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || j?.details || "MVP vote failed");
+
+      await loadDetail(selected.id);
+      setToast({ kind: "ok", msg: j?.announced ? "MVP gewählt & im Discord announced." : "MVP-Stimme gespeichert." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
+    } finally {
+      setMvpBusy(false);
     }
   }
 
@@ -1245,6 +1289,103 @@ export default function OpsPanel() {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                <div className="mt-6 rounded-2xl border border-hud-line/70 bg-black/10 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">MVP-Wahl</div>
+                      <div className="mt-2 text-sm text-hud-muted">
+                        {isOpOver
+                          ? "Nach Einsatzende wählt jeder Teilnehmer den MVP. Sobald alle abgestimmt haben, wird der MVP automatisch im Discord announced."
+                          : "Die MVP-Wahl wird nach Einsatzende freigeschaltet."}
+                      </div>
+                    </div>
+                    <div className="text-xs text-hud-muted">
+                      {detail?.mvp?.eligible ? (
+                        <>
+                          Stimmen: <span className="text-hud-text">{Number(detail?.mvp?.voted ?? 0)}</span> /
+                          <span className="text-hud-text"> {Number(detail?.mvp?.eligible ?? 0)}</span>
+                        </>
+                      ) : (
+                        <>—</>
+                      )}
+                    </div>
+                  </div>
+
+                  {detail?.mvp?.announced_at ? (
+                    <div className="mt-3 rounded-xl border border-hud-line/60 bg-black/10 p-3">
+                      <div className="text-sm">
+                        🌟 MVP wurde announced: <span className="text-white/90">{fmtDT(String(detail.mvp.announced_at))}</span>
+                      </div>
+                      <div className="mt-2 text-xs text-hud-muted">
+                        MVP: <span className="text-hud-text">{String(detail?.mvp?.mvp_card_id ?? "—")}</span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
+                    <select
+                      className="hud-input !h-10"
+                      value={mvpPick}
+                      onChange={(e) => setMvpPick(e.target.value)}
+                      disabled={!discordId || !viewerIsParticipant || !isOpOver || mvpBusy || !!detail?.mvp?.announced_at}
+                    >
+                      {(detail?.participants ?? [])
+                        .map((p) => p.marine_card_id)
+                        .filter((cid) => cid && cid !== myMemberCardId)
+                        .map((cid) => {
+                          const m = rosterById.get(cid);
+                          const label = m ? `${m.rank} • ${m.name}` : cid;
+                          return (
+                            <option key={cid} value={cid}>
+                              {label}
+                            </option>
+                          );
+                        })}
+                    </select>
+                    <button
+                      className="btn btn-accent"
+                      type="button"
+                      onClick={submitMvpVote}
+                      disabled={!discordId || !viewerIsParticipant || !isOpOver || !mvpPick || mvpBusy || !!detail?.mvp?.announced_at}
+                      title={!isOpOver ? "Erst nach Einsatzende" : !viewerIsParticipant ? "Nur Teilnehmer" : "MVP wählen"}
+                    >
+                      {mvpBusy ? "Sende..." : "MVP wählen"}
+                    </button>
+                  </div>
+
+                  {!discordId ? <div className="mt-2 text-xs text-hud-muted">Login nötig.</div> : null}
+                  {discordId && !viewerIsParticipant ? <div className="mt-2 text-xs text-hud-muted">Nur Teilnehmer dürfen abstimmen.</div> : null}
+                  {discordId && viewerIsParticipant && !isOpOver ? (
+                    <div className="mt-2 text-xs text-hud-muted">Wahl ist nach Einsatzende verfügbar (end_at setzen).</div>
+                  ) : null}
+
+                  {detail?.mvp?.counts?.length ? (
+                    <div className="mt-4">
+                      <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Zwischenstand</div>
+                      <div className="mt-2 grid gap-2 md:grid-cols-2">
+                        {(detail.mvp.counts as any[]).slice(0, 8).map((c: any) => {
+                          const cid = String(c?.marine_card_id ?? "");
+                          const m = rosterById.get(cid);
+                          const label = m ? `${m.rank} • ${m.name}` : cid;
+                          return (
+                            <div key={cid} className="rounded-xl border border-hud-line/60 bg-black/10 p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-sm font-medium">{label}</div>
+                                <div className="text-sm text-hud-text">{Number(c?.votes ?? 0)}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {(detail.mvp.counts as any[]).length > 8 ? (
+                        <div className="mt-2 text-xs text-hud-muted">(weitere Kandidaten ausgeblendet)</div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs text-hud-muted">Noch keine Stimmen.</div>
+                  )}
                 </div>
 
                 <div className="mt-6 rounded-2xl border border-hud-line/70 bg-black/10 p-4">
