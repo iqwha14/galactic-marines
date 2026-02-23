@@ -14,6 +14,8 @@ type Operation = {
   outcome: string;
   summary: string;
   image_url: string | null;
+  status?: string | null;
+  map_grid?: string | null;
   created_by_discord_id: string;
   created_at: string;
 };
@@ -103,6 +105,23 @@ function rankIndex(rankName: string): number {
   return 5_000;
 }
 
+function gridToPercent(gridRaw: string | null | undefined): { x: number; y: number } | null {
+  const g = String(gridRaw ?? "").trim().toUpperCase();
+  // Formats like "M-10" or "M10"
+  const m = g.match(/^([A-U])\s*[- ]?\s*(\d{1,2})$/);
+  if (!m) return null;
+  const letter = m[1];
+  const n = Number(m[2]);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const maxCols = 21; // A-U
+  const maxRows = 21; // 1-21 (fits most map grids)
+  const col = letter.charCodeAt(0) - "A".charCodeAt(0) + 1;
+  const row = n;
+  const x = ((col - 1) / (maxCols - 1)) * 100;
+  const y = ((row - 1) / (maxRows - 1)) * 100;
+  return { x, y };
+}
+
 export default function OpsPanel() {
   const { data: session } = useSession();
   const discordId = (session as any)?.discordId as string | undefined;
@@ -128,6 +147,7 @@ export default function OpsPanel() {
     reports: Report[];
     ratings: any[];
     marineRatings: any[];
+    killlogs: any[];
   } | null>(null);
 
   const [myMemberCardId, setMyMemberCardId] = useState<string>("");
@@ -164,6 +184,17 @@ export default function OpsPanel() {
   const [repTitle, setRepTitle] = useState("");
   const [repBody, setRepBody] = useState("");
 
+  const [killDeaths, setKillDeaths] = useState<number>(1);
+  const [killText, setKillText] = useState<string>("");
+
+  const [rateModal, setRateModal] = useState<{
+    open: boolean;
+    marine_card_id: string;
+    marine_label: string;
+    stars: number;
+    comment: string;
+  }>({ open: false, marine_card_id: "", marine_label: "", stars: 0, comment: "" });
+
   async function loadRoster() {
     const res = await fetch("/api/trello", { cache: "no-store" });
     const j = await res.json();
@@ -187,6 +218,7 @@ export default function OpsPanel() {
       reports: j.reports ?? [],
       ratings: j.ratings ?? [],
       marineRatings: j.marineRatings ?? [],
+      killlogs: j.killlogs ?? [],
     });
   }
 
@@ -255,6 +287,20 @@ export default function OpsPanel() {
     return Math.round((r.reduce((a: any, b: any) => a + (Number(b.stars) || 0), 0) / r.length) * 10) / 10;
   }, [detail?.ratings]);
 
+  const killAgg = useMemo(() => {
+    const rows = detail?.killlogs ?? [];
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      const key = String((r as any)?.display_name ?? (r as any)?.marine_card_id ?? (r as any)?.discord_id ?? "Unbekannt");
+      const deaths = Number((r as any)?.deaths ?? 0);
+      if (!Number.isFinite(deaths) || deaths <= 0) continue;
+      map.set(key, (map.get(key) ?? 0) + deaths);
+    }
+    const list = Array.from(map.entries()).map(([name, deaths]) => ({ name, deaths }));
+    list.sort((a, b) => b.deaths - a.deaths || a.name.localeCompare(b.name, "de"));
+    return list;
+  }, [detail?.killlogs]);
+
   
   const isOpOver = useMemo(() => {
     if (!selected) return false;
@@ -269,6 +315,18 @@ export default function OpsPanel() {
     if (!card) return false;
     return (detail?.participants ?? []).some((p) => p.marine_card_id === card);
   }, [detail?.participants, myMemberCardId]);
+
+  // If the creator created the op and was already added by FE as lead/participant,
+  // they might not yet have a gm_unit_members mapping. Allow them to rate anyway.
+  const viewerIsCreator = useMemo(() => {
+    if (!discordId) return false;
+    if (!selected) return false;
+    return String(selected.created_by_discord_id ?? "").trim() === String(discordId).trim();
+  }, [discordId, selected]);
+
+  const viewerMayRate = useMemo(() => {
+    return viewerIsParticipant || viewerIsCreator;
+  }, [viewerIsParticipant, viewerIsCreator]);
 
 const viewerCanJoin = useMemo(() => {
     if (!discordId) return false;
@@ -438,7 +496,7 @@ const viewerCanJoin = useMemo(() => {
     }
   }
 
-  async function rateMarine(marine_card_id: string, stars: number) {
+  async function rateMarine(marine_card_id: string, stars: number, comment: string) {
     if (!selected) return;
     setErr(null);
     setBusy(true);
@@ -446,12 +504,82 @@ const viewerCanJoin = useMemo(() => {
       const res = await fetch(`/api/ops/${selected.id}/rate-marine`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ marine_card_id, stars }),
+        body: JSON.stringify({ marine_card_id, stars, comment }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j?.error || j?.details || "Marine rating failed");
       await loadDetail(selected.id);
       setToast({ kind: "ok", msg: "Soldatenbewertung gespeichert." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitKilllog() {
+    if (!selected) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/ops/${selected.id}/killlogs`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deaths: killDeaths, text: killText }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || j?.details || "Killlog failed");
+      setKillDeaths(1);
+      setKillText("");
+      await loadDetail(selected.id);
+      setToast({ kind: "ok", msg: "Killlog gespeichert." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setOpStatus(nextStatus: string) {
+    if (!selected) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/ops/${selected.id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || j?.details || "Status update failed");
+      await loadOps();
+      await loadDetail(selected.id);
+      setToast({ kind: "ok", msg: "Status aktualisiert." });
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setToast({ kind: "err", msg: String(e?.message ?? e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setOpMapGrid(nextGrid: string) {
+    if (!selected) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/ops/${selected.id}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ map_grid: nextGrid }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || j?.details || "Map update failed");
+      await loadOps();
+      await loadDetail(selected.id);
+      setToast({ kind: "ok", msg: "Koordinate gespeichert." });
     } catch (e: any) {
       setErr(String(e?.message ?? e));
       setToast({ kind: "err", msg: String(e?.message ?? e) });
@@ -630,6 +758,67 @@ const viewerCanJoin = useMemo(() => {
             </div>
           ) : null}
 
+          {rateModal.open ? (
+            <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 p-4">
+              <div className="w-full max-w-lg rounded-2xl border border-hud-line/70 bg-[#05070c] p-5 shadow-xl">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Soldatenbewertung</div>
+                    <div className="mt-2 text-lg font-semibold">{rateModal.marine_label}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => setRateModal({ open: false, marine_card_id: "", marine_label: "", stars: 0, comment: "" })}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="mt-4">
+                  <div className="text-sm text-hud-muted">Sterne vergeben</div>
+                  <div className="mt-2">
+                    <Stars value={rateModal.stars} onChange={(n) => setRateModal((s) => ({ ...s, stars: n }))} />
+                  </div>
+
+                  <div className="mt-4 text-sm text-hud-muted">Grund (Pflicht)</div>
+                  <textarea
+                    className="hud-input mt-2 min-h-[110px]"
+                    placeholder="Warum? (muss ausgefüllt sein)"
+                    value={rateModal.comment}
+                    onChange={(e) => setRateModal((s) => ({ ...s, comment: e.target.value }))}
+                  />
+
+                  <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setRateModal({ open: false, marine_card_id: "", marine_label: "", stars: 0, comment: "" })}
+                      disabled={busy}
+                    >
+                      Abbrechen
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-accent"
+                      disabled={busy || !discordId || rateModal.stars <= 0 || !rateModal.comment.trim()}
+                      onClick={async () => {
+                        const target = rateModal.marine_card_id;
+                        const stars = rateModal.stars;
+                        const comment = rateModal.comment;
+                        setRateModal((s) => ({ ...s, open: false }));
+                        await rateMarine(target, stars, comment);
+                        setRateModal({ open: false, marine_card_id: "", marine_label: "", stars: 0, comment: "" });
+                      }}
+                    >
+                      Speichern
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div className="rounded-2xl border border-hud-line/70 bg-black/20 p-4">
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Einsätze</div>
@@ -783,6 +972,25 @@ const viewerCanJoin = useMemo(() => {
                       {selected.planet} • {fmtDT(selected.start_at)} {selected.end_at ? `– ${fmtDT(selected.end_at)}` : ""}
                     </div>
                     <div className="mt-1 text-sm text-hud-muted">{(selected.units ?? []).join(" • ") || "—"} • {selected.outcome}</div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-hud-line/70 bg-black/20 px-3 py-1 text-xs text-hud-muted">
+                        Status: <span className="text-hud-text">{String(selected.status ?? "Bevorstehend")}</span>
+                      </span>
+                      {canEdit ? (
+                        <select
+                          className="hud-input !h-9 !py-0 !text-sm"
+                          value={String(selected.status ?? "Bevorstehend")}
+                          onChange={(e) => setOpStatus(e.target.value)}
+                          disabled={busy}
+                          title="Einsatzstatus ändern"
+                        >
+                          <option value="Bevorstehend">Bevorstehend</option>
+                          <option value="Aktiv">Aktiv</option>
+                          <option value="Beendet">Beendet</option>
+                        </select>
+                      ) : null}
+                    </div>
                   </div>
 
                   {canEdit ? (
@@ -998,24 +1206,24 @@ const viewerCanJoin = useMemo(() => {
                     </div>
 
                     <div className="mt-3">
-                      <Stars value={opStars} onChange={discordId && viewerIsParticipant ? setOpStars : undefined} />
+                      <Stars value={opStars} onChange={discordId && viewerMayRate ? setOpStars : undefined} />
                       <textarea
                         className="hud-input mt-3 min-h-[90px]"
                         placeholder={
                           !discordId
                             ? "Login nötig zum Bewerten"
-                            : viewerIsParticipant
+                            : viewerMayRate
                               ? "Kommentar (optional)"
                               : "Nur Teilnehmer können bewerten"
                         }
                         value={opComment}
                         onChange={(e) => setOpComment(e.target.value)}
-                        disabled={!discordId || !viewerIsParticipant}
+                        disabled={!discordId || !viewerMayRate}
                       />
                       <button
                         className="btn btn-accent mt-3"
                         onClick={rateOperation}
-                        disabled={!discordId || !viewerIsParticipant || busy || opStars <= 0}
+                        disabled={!discordId || !viewerMayRate || busy || opStars <= 0}
                       >
                         Bewerten
                       </button>
@@ -1025,8 +1233,8 @@ const viewerCanJoin = useMemo(() => {
 
                 <div className="mt-6 rounded-2xl border border-hud-line/70 bg-black/10 p-4">
                   <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Soldatenbewertung (im Einsatz)</div>
-                  {!viewerIsParticipant ? (
-                    <div className="mt-2 text-sm text-hud-muted">Nur Teilnehmer können Soldaten aus diesem Einsatz bewerten.</div>
+                  {!viewerMayRate ? (
+                    <div className="mt-2 text-sm text-hud-muted">Nur Teilnehmer (oder der Ersteller) können Soldaten aus diesem Einsatz bewerten.</div>
                   ) : null}
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {(detail?.participants ?? []).map((p) => {
@@ -1039,16 +1247,168 @@ const viewerCanJoin = useMemo(() => {
                           <div className="mt-2 flex items-center justify-between gap-2">
                             <Stars
                               value={v}
-                              onChange={discordId && viewerIsParticipant ? (n) => rateMarine(p.marine_card_id, n) : undefined}
+                              onChange={
+                                discordId && viewerMayRate
+                                  ? () => {
+                                      const label = m ? `${m.rank} • ${m.name}` : p.marine_card_id;
+                                      setRateModal({
+                                        open: true,
+                                        marine_card_id: p.marine_card_id,
+                                        marine_label: label,
+                                        stars: v || 0,
+                                        comment: "",
+                                      });
+                                    }
+                                  : undefined
+                              }
                             />
                             <div className="text-xs text-hud-muted">
-                              {!discordId ? "Login nötig" : viewerIsParticipant ? "klick zum bewerten" : "Nur Teilnehmer"}
+                              {!discordId ? "Login nötig" : viewerMayRate ? "klick zum bewerten" : "Nur Teilnehmer"}
                             </div>
                           </div>
                         </div>
                       );
                     })}
                     {(detail?.participants ?? []).length === 0 ? <div className="text-hud-muted">Keine Teilnehmer.</div> : null}
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-6 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-hud-line/70 bg-black/10 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Galaxie-Karte (Immersion)</div>
+                        <div className="mt-2 text-sm text-hud-muted">
+                          Koordinate: <span className="text-hud-text">{String(selected.map_grid ?? "—")}</span>
+                        </div>
+                      </div>
+                      <a
+                        className="btn btn-ghost"
+                        href="https://www.starwars.com/star-wars-galaxy-map"
+                        target="_blank"
+                        rel="noreferrer"
+                        title="StarWars.com Galaxy Map öffnen"
+                      >
+                        Map öffnen
+                      </a>
+                    </div>
+
+                    {canEdit ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <input
+                          className="hud-input !h-9 !py-0 !text-sm"
+                          placeholder='z.B. "M-10"'
+                          defaultValue={String(selected.map_grid ?? "")}
+                          onBlur={(e) => {
+                            const v = String(e.target.value ?? "").trim();
+                            if (v === String(selected.map_grid ?? "").trim()) return;
+                            if (!v) return setOpMapGrid("");
+                            setOpMapGrid(v);
+                          }}
+                          disabled={busy}
+                        />
+                        <div className="text-xs text-hud-muted">Speichern: Feld verlassen</div>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4">
+                      {(() => {
+                        const pos = gridToPercent(selected.map_grid);
+                        return (
+                          <div className="relative overflow-hidden rounded-2xl border border-hud-line/60 bg-black/30">
+                            <div
+                              className="h-[280px] w-full"
+                              style={{
+                                backgroundImage:
+                                  "radial-gradient(circle at 30% 20%, rgba(255,255,255,0.14), rgba(0,0,0,0) 40%), radial-gradient(circle at 70% 60%, rgba(255,255,255,0.10), rgba(0,0,0,0) 45%), radial-gradient(circle at 20% 80%, rgba(255,255,255,0.08), rgba(0,0,0,0) 35%)",
+                              }}
+                            />
+                            {/* grid overlay */}
+                            <div className="pointer-events-none absolute inset-0 opacity-25" style={{
+                              backgroundImage:
+                                "linear-gradient(to right, rgba(255,255,255,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.18) 1px, transparent 1px)",
+                              backgroundSize: "calc(100% / 20) calc(100% / 20)",
+                            }} />
+                            {pos ? (
+                              <div
+                                className="absolute"
+                                style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: "translate(-50%, -50%)" }}
+                              >
+                                <div className="h-3 w-3 rounded-full bg-marine-300 shadow" />
+                                <div className="mt-1 whitespace-nowrap text-xs text-marine-200">{selected.planet}</div>
+                              </div>
+                            ) : (
+                              <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-hud-muted">
+                                Keine Koordinate gesetzt (FE kann z.B. M-10 eintragen).
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-hud-line/70 bg-black/10 p-4">
+                    <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Killlog (Spaß & Statistik)</div>
+                    <div className="mt-2 text-sm text-hud-muted">
+                      Jeder kann Einträge sehen. Eingeben geht mit Discord-Login.
+                    </div>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[140px_1fr_auto]">
+                      <input
+                        className="hud-input"
+                        type="number"
+                        min={1}
+                        max={99}
+                        value={killDeaths}
+                        onChange={(e) => setKillDeaths(Number(e.target.value))}
+                        disabled={!discordId || busy}
+                        placeholder="Tode"
+                      />
+                      <input
+                        className="hud-input"
+                        value={killText}
+                        onChange={(e) => setKillText(e.target.value)}
+                        disabled={!discordId || busy}
+                        placeholder={!discordId ? "Login nötig" : "z.B. 'von Ewok überrollt'"}
+                      />
+                      <button
+                        className="btn btn-accent"
+                        type="button"
+                        onClick={submitKilllog}
+                        disabled={!discordId || busy || !killText.trim()}
+                      >
+                        Eintragen
+                      </button>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="text-sm text-hud-muted">Tode insgesamt</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {killAgg.slice(0, 8).map((x) => (
+                          <span key={x.name} className="rounded-full border border-hud-line/60 bg-black/20 px-3 py-1 text-xs">
+                            {x.name}: <span className="text-hud-text">{x.deaths}</span>
+                          </span>
+                        ))}
+                        {killAgg.length === 0 ? <span className="text-xs text-hud-muted">Noch keine Einträge.</span> : null}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 max-h-[260px] space-y-2 overflow-auto pr-1">
+                      {(detail?.killlogs ?? []).map((r: any) => (
+                        <div key={String(r.id ?? `${r.created_at}-${r.discord_id}`)} className="rounded-xl border border-hud-line/60 bg-black/10 p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="font-medium">
+                              {String(r.display_name ?? r.marine_card_id ?? "Unbekannt")}
+                              <span className="ml-2 text-xs text-hud-muted">+{Number(r.deaths ?? 0)}</span>
+                            </div>
+                            <div className="text-xs text-hud-muted">{r.created_at ? fmtDT(String(r.created_at)) : ""}</div>
+                          </div>
+                          <div className="mt-2 text-sm text-hud-text/90">{String(r.text ?? "")}</div>
+                        </div>
+                      ))}
+                      {(detail?.killlogs ?? []).length === 0 ? <div className="text-hud-muted">Noch keine Killlogs.</div> : null}
+                    </div>
                   </div>
                 </div>
 

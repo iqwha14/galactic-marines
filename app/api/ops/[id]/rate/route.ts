@@ -19,6 +19,15 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
   const sb = supabaseServer();
   const discord_id = String(gate.session?.discordId ?? "");
 
+  // Allow the creator to rate even if gm_unit_members mapping isn't set yet.
+  const { data: op, error: opErr } = await sb
+    .from("operations")
+    .select("id,created_by_discord_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (opErr) return NextResponse.json({ error: "DB error", details: opErr.message }, { status: 500 });
+  const isCreator = !!op && String((op as any).created_by_discord_id ?? "").trim() === discord_id;
+
   // Participation gate: only members who joined this operation may rate it.
   const { data: member, error: memErr } = await sb
     .from("gm_unit_members")
@@ -27,20 +36,22 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     .maybeSingle();
   if (memErr) return NextResponse.json({ error: "DB error", details: memErr.message }, { status: 500 });
   const myCard = String(member?.marine_card_id ?? "").trim();
-  if (!myCard) {
+  if (!myCard && !isCreator) {
     return NextResponse.json(
       { error: "Not in unit", details: "Du bist nicht als Mitglied der Einheit hinterlegt (Admin muss dich eintragen)." },
       { status: 403 }
     );
   }
-  const { data: part, error: partErr } = await sb
-    .from("operation_participants")
-    .select("operation_id")
-    .eq("operation_id", id)
-    .eq("marine_card_id", myCard)
-    .maybeSingle();
-  if (partErr) return NextResponse.json({ error: "DB error", details: partErr.message }, { status: 500 });
-  if (!part) return NextResponse.json({ error: "Not a participant", details: "Nur Teilnehmer können bewerten." }, { status: 403 });
+  if (!isCreator) {
+    const { data: part, error: partErr } = await sb
+      .from("operation_participants")
+      .select("operation_id")
+      .eq("operation_id", id)
+      .eq("marine_card_id", myCard)
+      .maybeSingle();
+    if (partErr) return NextResponse.json({ error: "DB error", details: partErr.message }, { status: 500 });
+    if (!part) return NextResponse.json({ error: "Not a participant", details: "Nur Teilnehmer können bewerten." }, { status: 403 });
+  }
 
   // upsert by (operation_id, discord_id) if unique exists; otherwise emulate with delete+insert
   const { error: delErr } = await sb.from("operation_ratings").delete().eq("operation_id", id).eq("discord_id", discord_id);

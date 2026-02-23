@@ -13,6 +13,8 @@ create table if not exists public.operations (
   outcome text not null default 'Unklar',
   summary text not null default '',
   image_url text null,
+  status text not null default 'Bevorstehend',
+  map_grid text null,
   created_by_discord_id text not null,
   created_at timestamptz not null default now()
 );
@@ -43,6 +45,21 @@ create table if not exists public.marine_ratings (
   created_at timestamptz not null default now(),
   primary key (operation_id, marine_card_id, discord_id)
 );
+
+-- Killlogs: funny / visible to everyone
+create table if not exists public.operation_killlogs (
+  id uuid primary key default uuid_generate_v4(),
+  operation_id uuid not null references public.operations(id) on delete cascade,
+  discord_id text not null,
+  marine_card_id text null,
+  display_name text null,
+  deaths int not null default 1 check (deaths between 1 and 99),
+  text text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_killlogs_op on public.operation_killlogs(operation_id);
+create index if not exists idx_killlogs_created on public.operation_killlogs(created_at desc);
 
 create table if not exists public.operation_reports (
   id uuid primary key default uuid_generate_v4(),

@@ -33,12 +33,26 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     sb.from("operation_reports").select("*").eq("operation_id", id).order("created_at", { ascending: false }),
   ]);
 
+  // Killlogs are optional (table might not exist yet in some installs)
+  let killlogs: any[] = [];
+  try {
+    const { data } = await sb
+      .from("operation_killlogs")
+      .select("*")
+      .eq("operation_id", id)
+      .order("created_at", { ascending: false });
+    killlogs = data ?? [];
+  } catch {
+    killlogs = [];
+  }
+
   return NextResponse.json({
     operation: op,
     participants: participants ?? [],
     ratings: ratings ?? [],
     marineRatings: marineRatings ?? [],
     reports: reports ?? [],
+    killlogs,
   });
 }
 
@@ -50,7 +64,7 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
   const body = await req.json().catch(() => ({}));
 
   const patch: any = {};
-  const allow = ["title", "planet", "start_at", "end_at", "units", "outcome", "summary", "image_url"];
+  const allow = ["title", "planet", "start_at", "end_at", "units", "outcome", "summary", "image_url", "status", "map_grid"];
   for (const k of allow) {
     if (!(k in body)) continue;
     // Normalize datetimes if needed (supports datetime-local)
