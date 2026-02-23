@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 function parseVictim(line: string): string | null {
-  // Esk killed Calm using weapon_x
+  // "Esk killed Calm using weapon_x"
   const match = line.match(/^(.+?) killed (.+?) using (.+)$/i);
   if (!match) return null;
   return match[2];
@@ -23,7 +23,7 @@ export async function POST(
     }
 
     const inserts = lines
-      .map((raw: string) => raw.trim())
+      .map((raw: string) => String(raw ?? "").trim())
       .filter(Boolean)
       .map((line: string) => ({
         operation_id: params.id,
@@ -33,9 +33,10 @@ export async function POST(
         victim: parseVictim(line),
       }));
 
-    const { error } = await supabaseAdmin
-      .from("operation_killlogs")
-      .insert(inserts);
+    // ✅ supabaseAdmin ist eine Factory -> erst Client erzeugen
+    const sb = supabaseAdmin();
+
+    const { error } = await sb.from("operation_killlogs").insert(inserts);
 
     if (error) {
       console.error(error);
