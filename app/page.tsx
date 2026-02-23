@@ -190,7 +190,7 @@ export default function CommandDeck() {
               <h1 className="gm-title">
                 MARINE <span className="gm-title-accent">COMMAND DECK</span>
               </h1>
-              <p className="gm-subtitle">Zugriff auf operative Systeme. Wähle ein Modul.</p>
+              <p className="gm-subtitle">OOC - NICHT IM RP VERWENDBAR</p>
             </div>
 
             <div className="flex items-center gap-3">

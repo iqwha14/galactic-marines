@@ -188,7 +188,7 @@ export default function OpsPanel() {
   const [repTitle, setRepTitle] = useState("");
   const [repBody, setRepBody] = useState("");
 
-  const [killDeaths, setKillDeaths] = useState<number>(1);
+  // ✅ Killlogs: nur Logs (Copy/Paste), kein manuelles Todes-Feld
   const [killText, setKillText] = useState<string>("");
 
   const [rateModal, setRateModal] = useState<{
@@ -291,26 +291,23 @@ export default function OpsPanel() {
     return Math.round((r.reduce((a: any, b: any) => a + (Number(b.stars) || 0), 0) / r.length) * 10) / 10;
   }, [detail?.ratings]);
 
+  // ✅ Kill-Aggregation: zählt pro erkannter Zeile "X killed Y using Z" die Opfer-Tode (+1)
   const killAgg = useMemo(() => {
     const rows = detail?.killlogs ?? [];
     const map = new Map<string, number>();
     for (const r of rows) {
-      // If the text looks like a SWRP kill log line, count deaths by the VICTIM.
-      // Example: "Esk killed Calm using weapon_swrp_fusioncutter"
       const t = String((r as any)?.text ?? "");
       const m = t.match(/^(.+?)\s+killed\s+(.+?)\s+using\s+(.+?)\s*$/i);
-      const victim = m ? String(m[2]).trim() : "";
-      const key = victim || String((r as any)?.display_name ?? (r as any)?.marine_card_id ?? (r as any)?.discord_id ?? "Unbekannt");
-      const deaths = Number((r as any)?.deaths ?? 0);
-      if (!Number.isFinite(deaths) || deaths <= 0) continue;
-      map.set(key, (map.get(key) ?? 0) + deaths);
+      if (!m) continue;
+      const victim = String(m[2]).trim();
+      if (!victim) continue;
+      map.set(victim, (map.get(victim) ?? 0) + 1);
     }
     const list = Array.from(map.entries()).map(([name, deaths]) => ({ name, deaths }));
     list.sort((a, b) => b.deaths - a.deaths || a.name.localeCompare(b.name, "de"));
     return list;
   }, [detail?.killlogs]);
 
-  
   const isOpOver = useMemo(() => {
     if (!selected) return false;
     if (!selected.end_at) return false;
@@ -337,7 +334,7 @@ export default function OpsPanel() {
     return viewerIsParticipant || viewerIsCreator;
   }, [viewerIsParticipant, viewerIsCreator]);
 
-const viewerCanJoin = useMemo(() => {
+  const viewerCanJoin = useMemo(() => {
     if (!discordId) return false;
     const card = String(myMemberCardId ?? "").trim();
     if (!card) return false;
@@ -371,7 +368,6 @@ const viewerCanJoin = useMemo(() => {
     }
   }
 
-
   async function leaveSelectedOp() {
     if (!selected) return;
     setErr(null);
@@ -389,6 +385,7 @@ const viewerCanJoin = useMemo(() => {
       setBusy(false);
     }
   }
+
   const avgByMarine = useMemo(() => {
     const map = new Map<string, { total: number; count: number }>();
     for (const r of ratingsAll) {
@@ -536,17 +533,16 @@ const viewerCanJoin = useMemo(() => {
         .split(/\r?\n/)
         .map((x) => x.trim())
         .filter(Boolean)
-        .slice(0, 50);
+        .slice(0, 100);
 
-      const payload = lines.length > 1 ? { lines } : { deaths: killDeaths, text: killText };
+      // Always send as lines (even if only one)
       const res = await fetch(`/api/ops/${selected.id}/killlogs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ lines }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || j?.details || "Killlog failed");
-      setKillDeaths(1);
       setKillText("");
       await loadDetail(selected.id);
       setToast({ kind: "ok", msg: "Killlog gespeichert." });
@@ -756,8 +752,8 @@ const viewerCanJoin = useMemo(() => {
             <div
               className={[
                 "pointer-events-none fixed right-6 top-6 z-[9999] w-auto",
-                                "max-w-[min(420px,calc(100vw-48px))]",
-"rounded-2xl border px-4 py-3 text-sm shadow-lg",
+                "max-w-[min(420px,calc(100vw-48px))]",
+                "rounded-2xl border px-4 py-3 text-sm shadow-lg",
                 toast.kind === "ok" ? "border-marine-500/40 bg-marine-950/30" : "border-red-500/40 bg-red-950/30",
               ].join(" ")}
             >
@@ -873,7 +869,9 @@ const viewerCanJoin = useMemo(() => {
             <div className="mt-6">
               <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Neuer Einsatz</div>
               {!canEdit ? (
-                <div className="mt-2 text-sm text-hud-muted">Nur FE/Einheitsleitung kann Einsätze anlegen/bearbeiten/löschen. Ansehen darf jeder.</div>
+                <div className="mt-2 text-sm text-hud-muted">
+                  Nur FE/Einheitsleitung kann Einsätze anlegen/bearbeiten/löschen. Ansehen darf jeder.
+                </div>
               ) : (
                 <div className="mt-3 grid gap-2">
                   <input className="hud-input" placeholder="Titel" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
@@ -1164,7 +1162,9 @@ const viewerCanJoin = useMemo(() => {
                       <div className="text-xs text-hud-muted">
                         {discordId ? (
                           myMemberCardId ? (
-                            <>Angemeldet als <span className="text-white/80">{myMemberName || discordId}</span></>
+                            <>
+                              Angemeldet als <span className="text-white/80">{myMemberName || discordId}</span>
+                            </>
                           ) : (
                             <>Du bist nicht als Einheit-Mitglied hinterlegt (Admin muss dich eintragen).</>
                           )
@@ -1229,8 +1229,8 @@ const viewerCanJoin = useMemo(() => {
                           !discordId
                             ? "Login nötig zum Bewerten"
                             : viewerMayRate
-                              ? "Kommentar (optional)"
-                              : "Nur Teilnehmer können bewerten"
+                            ? "Kommentar (optional)"
+                            : "Nur Teilnehmer können bewerten"
                         }
                         value={opComment}
                         onChange={(e) => setOpComment(e.target.value)}
@@ -1250,7 +1250,9 @@ const viewerCanJoin = useMemo(() => {
                 <div className="mt-6 rounded-2xl border border-hud-line/70 bg-black/10 p-4">
                   <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Soldatenbewertung (im Einsatz)</div>
                   {!viewerMayRate ? (
-                    <div className="mt-2 text-sm text-hud-muted">Nur Teilnehmer (oder der Ersteller) können Soldaten aus diesem Einsatz bewerten.</div>
+                    <div className="mt-2 text-sm text-hud-muted">
+                      Nur Teilnehmer (oder der Ersteller) können Soldaten aus diesem Einsatz bewerten.
+                    </div>
                   ) : null}
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {(detail?.participants ?? []).map((p) => {
@@ -1353,16 +1355,16 @@ const viewerCanJoin = useMemo(() => {
                               }}
                             />
                             {/* grid overlay */}
-                            <div className="pointer-events-none absolute inset-0 opacity-25" style={{
-                              backgroundImage:
-                                "linear-gradient(to right, rgba(255,255,255,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.18) 1px, transparent 1px)",
-                              backgroundSize: "calc(100% / 20) calc(100% / 20)",
-                            }} />
+                            <div
+                              className="pointer-events-none absolute inset-0 opacity-25"
+                              style={{
+                                backgroundImage:
+                                  "linear-gradient(to right, rgba(255,255,255,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.18) 1px, transparent 1px)",
+                                backgroundSize: "calc(100% / 20) calc(100% / 20)",
+                              }}
+                            />
                             {pos ? (
-                              <div
-                                className="absolute"
-                                style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: "translate(-50%, -50%)" }}
-                              >
+                              <div className="absolute" style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: "translate(-50%, -50%)" }}>
                                 <div className="h-3 w-3 rounded-full bg-marine-300 shadow" />
                                 <div className="mt-1 whitespace-nowrap text-xs text-marine-200">{selected.planet}</div>
                               </div>
@@ -1379,40 +1381,27 @@ const viewerCanJoin = useMemo(() => {
 
                   <div className="rounded-2xl border border-hud-line/70 bg-black/10 p-4">
                     <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Killlog (Spaß & Statistik)</div>
-                    <div className="mt-2 text-sm text-hud-muted">
-                      Jeder kann Einträge sehen. Eingeben geht mit Discord-Login.
-                    </div>
+                    <div className="mt-2 text-sm text-hud-muted">Jeder kann Einträge sehen. Eingeben geht mit Discord-Login.</div>
 
-                    <div className="mt-3 grid gap-2 sm:grid-cols-[140px_1fr_auto]">
-                      <input
-                        className="hud-input"
-                        type="number"
-                        min={1}
-                        max={99}
-                        value={killDeaths}
-                        onChange={(e) => setKillDeaths(Number(e.target.value))}
-                        disabled={!discordId || busy}
-                        placeholder="Tode"
-                      />
+                    <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto]">
                       <textarea
-                        className="hud-input min-h-[44px]"
+                        className="hud-input min-h-[84px]"
                         value={killText}
                         onChange={(e) => setKillText(e.target.value)}
                         disabled={!discordId || busy}
-                        placeholder={!discordId ? "Login nötig" : "Hier kannst du Logs reinkopieren – auch mehrere Zeilen.\nz.B. Esk killed Calm using weapon_swrp_fusioncutter"}
+                        placeholder={
+                          !discordId
+                            ? "Login nötig"
+                            : "Hier kannst du Logs reinkopieren – auch mehrere Zeilen.\nBeispiel:\nEsk killed Calm using weapon_swrp_fusioncutter"
+                        }
                       />
-                      <button
-                        className="btn btn-accent"
-                        type="button"
-                        onClick={submitKilllog}
-                        disabled={!discordId || busy || !killText.trim()}
-                      >
+                      <button className="btn btn-accent" type="button" onClick={submitKilllog} disabled={!discordId || busy || !killText.trim()}>
                         Eintragen
                       </button>
                     </div>
 
                     <div className="mt-4">
-                      <div className="text-sm text-hud-muted">Tode insgesamt</div>
+                      <div className="text-sm text-hud-muted">Tode insgesamt (aus Log-Zeilen)</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         {killAgg.slice(0, 8).map((x) => (
                           <span key={x.name} className="rounded-full border border-hud-line/60 bg-black/20 px-3 py-1 text-xs">
@@ -1441,13 +1430,10 @@ const viewerCanJoin = useMemo(() => {
                             );
                           })()}
                           <div className="flex items-start justify-between gap-3">
-                            <div className="font-medium">
-                              {String(r.display_name ?? r.marine_card_id ?? "Unbekannt")}
-                              <span className="ml-2 text-xs text-hud-muted">+{Number(r.deaths ?? 0)}</span>
-                            </div>
+                            <div className="font-medium">{String(r.display_name ?? r.marine_card_id ?? "Unbekannt")}</div>
                             <div className="text-xs text-hud-muted">{r.created_at ? fmtDT(String(r.created_at)) : ""}</div>
                           </div>
-                          <div className="mt-2 text-sm text-hud-text/90">{String(r.text ?? "")}</div>
+                          <div className="mt-2 text-sm text-hud-text/90 whitespace-pre-wrap">{String(r.text ?? "")}</div>
                         </div>
                       ))}
                       {(detail?.killlogs ?? []).length === 0 ? <div className="text-hud-muted">Noch keine Killlogs.</div> : null}
@@ -1583,9 +1569,7 @@ const viewerCanJoin = useMemo(() => {
                             <div className="mt-1 text-sm text-hud-muted">
                               {Number(r?.score ?? 0)}/5 • von {String(r?.rater_name ?? "Unbekannt")}
                             </div>
-                            <div className="mt-1 text-xs text-hud-muted">
-                              Einsatz: {String(r?.operation_title ?? r?.operation_id ?? "—")}
-                            </div>
+                            <div className="mt-1 text-xs text-hud-muted">Einsatz: {String(r?.operation_title ?? r?.operation_id ?? "—")}</div>
                             {String((r as any)?.comment ?? "").trim() ? (
                               <div className="mt-2 rounded-lg border border-hud-line/50 bg-black/10 p-2 text-xs text-hud-muted whitespace-pre-wrap">
                                 <span className="text-hud-text/80">Grund:</span> {String((r as any)?.comment ?? "").trim()}
@@ -1610,8 +1594,6 @@ const viewerCanJoin = useMemo(() => {
           )}
         </div>
       )}
-
-
     </div>
   );
 }
