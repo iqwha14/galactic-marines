@@ -33,6 +33,103 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     sb.from("operation_reports").select("*").eq("operation_id", id).order("created_at", { ascending: false }),
   ]);
 
+  // Best-effort: resolve names from gm_unit_members so the UI doesn't show "Unbekannt".
+  // - rater names (discord_id -> display_name or Trello card name fallback)
+  // - rated marine names (marine_card_id -> display_name or Trello card name fallback)
+  const discordIds = new Set<string>();
+  const cardIds = new Set<string>();
+  for (const r of ratings ?? []) {
+    const did = String((r as any)?.discord_id ?? "").trim();
+    if (did) discordIds.add(did);
+  }
+  for (const r of marineRatings ?? []) {
+    const did = String((r as any)?.discord_id ?? "").trim();
+    if (did) discordIds.add(did);
+    const cid = String((r as any)?.marine_card_id ?? "").trim();
+    if (cid) cardIds.add(cid);
+  }
+  for (const p of participants ?? []) {
+    const cid = String((p as any)?.marine_card_id ?? "").trim();
+    if (cid) cardIds.add(cid);
+  }
+
+  // Load unit member mapping for all relevant ids.
+  let unitMembers: any[] = [];
+  try {
+    const ors: string[] = [];
+    if (discordIds.size) ors.push(`discord_id.in.(${[...discordIds].map((x) => `"${x}"`).join(",")})`);
+    if (cardIds.size) ors.push(`marine_card_id.in.(${[...cardIds].map((x) => `"${x}"`).join(",")})`);
+    if (ors.length) {
+      const { data } = await sb.from("gm_unit_members").select("discord_id, marine_card_id, display_name").or(ors.join(","));
+      unitMembers = data ?? [];
+    }
+  } catch {
+    unitMembers = [];
+  }
+
+  const displayNameByDiscord = new Map<string, string>();
+  const displayNameByCard = new Map<string, string>();
+  const cardByDiscord = new Map<string, string>();
+  for (const m of unitMembers ?? []) {
+    const did = String((m as any)?.discord_id ?? "").trim();
+    const cid = String((m as any)?.marine_card_id ?? "").trim();
+    const dn = String((m as any)?.display_name ?? "").trim();
+    if (did && dn) displayNameByDiscord.set(did, dn);
+    if (cid && dn) displayNameByCard.set(cid, dn);
+    if (did && cid) cardByDiscord.set(did, cid);
+  }
+
+  // Trello card name fallback (optional; avoids "Unbekannt" when display_name isn't set).
+  // This runs only if we actually need it.
+  let trelloNameByCard = new Map<string, string>();
+  try {
+    const needFallback = [...cardByDiscord.values()].some((cid) => cid && !displayNameByCard.get(cid)) ||
+      [...cardIds].some((cid) => cid && !displayNameByCard.get(cid));
+    if (needFallback) {
+      const { requiredEnv, trelloBaseParams } = await import("@/app/api/_lib/trello");
+      const boardId = requiredEnv("TRELLO_BOARD_ID");
+      const { key, token } = trelloBaseParams();
+      const url = new URL(`https://api.trello.com/1/boards/${boardId}/cards`);
+      url.searchParams.set("key", key);
+      url.searchParams.set("token", token);
+      url.searchParams.set("fields", "name");
+      url.searchParams.set("limit", "1000");
+      const res = await fetch(url.toString(), { next: { revalidate: 60 } });
+      if (res.ok) {
+        const cards = (await res.json()) as Array<{ id: string; name: string }>;
+        trelloNameByCard = new Map(cards.map((c) => [String(c.id), String(c.name)]));
+      }
+    }
+  } catch {
+    trelloNameByCard = new Map<string, string>();
+  }
+
+  const nameForDiscord = (didRaw: any) => {
+    const did = String(didRaw ?? "").trim();
+    if (!did) return null;
+    const direct = displayNameByDiscord.get(did);
+    if (direct) return direct;
+    const cid = cardByDiscord.get(did);
+    return cid ? trelloNameByCard.get(cid) ?? null : null;
+  };
+  const nameForCard = (cidRaw: any) => {
+    const cid = String(cidRaw ?? "").trim();
+    if (!cid) return null;
+    const direct = displayNameByCard.get(cid);
+    if (direct) return direct;
+    return trelloNameByCard.get(cid) ?? null;
+  };
+
+  const ratingsEnriched = (ratings ?? []).map((r: any) => ({
+    ...r,
+    rater_name: r?.rater_name ?? nameForDiscord(r?.discord_id),
+  }));
+  const marineRatingsEnriched = (marineRatings ?? []).map((r: any) => ({
+    ...r,
+    rater_name: r?.rater_name ?? nameForDiscord(r?.discord_id),
+    marine_name: r?.marine_name ?? nameForCard(r?.marine_card_id),
+  }));
+
   // Killlogs are optional (table might not exist yet in some installs)
   let killlogs: any[] = [];
   try {
@@ -49,8 +146,8 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
   return NextResponse.json({
     operation: op,
     participants: participants ?? [],
-    ratings: ratings ?? [],
-    marineRatings: marineRatings ?? [],
+    ratings: ratingsEnriched,
+    marineRatings: marineRatingsEnriched,
     reports: reports ?? [],
     killlogs,
   });

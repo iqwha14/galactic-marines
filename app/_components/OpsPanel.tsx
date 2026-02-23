@@ -33,6 +33,7 @@ type RatingsRow = {
   marine_name: string | null;
   rater_name: string | null;
   score: number | null;
+  comment?: string | null;
   operation_title: string | null;
   operation_id: string | null;
   created_at: string | null;
@@ -174,6 +175,9 @@ export default function OpsPanel() {
   const [newStart, setNewStart] = useState("");
   const [newOutcome, setNewOutcome] = useState("Unklar");
   const [newUnits, setNewUnits] = useState<string[]>([]);
+
+  // Canon galaxy map (user provided). Try JPG first; fall back to PNG if the host blocks JPG.
+  const [mapImgSrc, setMapImgSrc] = useState<string>("https://i.imgur.com/zGYMR82.jpg");
   const [newSummary, setNewSummary] = useState("");
   const [newLead, setNewLead] = useState("");
   const [newMembers, setNewMembers] = useState<string[]>([]);
@@ -291,7 +295,12 @@ export default function OpsPanel() {
     const rows = detail?.killlogs ?? [];
     const map = new Map<string, number>();
     for (const r of rows) {
-      const key = String((r as any)?.display_name ?? (r as any)?.marine_card_id ?? (r as any)?.discord_id ?? "Unbekannt");
+      // If the text looks like a SWRP kill log line, count deaths by the VICTIM.
+      // Example: "Esk killed Calm using weapon_swrp_fusioncutter"
+      const t = String((r as any)?.text ?? "");
+      const m = t.match(/^(.+?)\s+killed\s+(.+?)\s+using\s+(.+?)\s*$/i);
+      const victim = m ? String(m[2]).trim() : "";
+      const key = victim || String((r as any)?.display_name ?? (r as any)?.marine_card_id ?? (r as any)?.discord_id ?? "Unbekannt");
       const deaths = Number((r as any)?.deaths ?? 0);
       if (!Number.isFinite(deaths) || deaths <= 0) continue;
       map.set(key, (map.get(key) ?? 0) + deaths);
@@ -523,10 +532,17 @@ const viewerCanJoin = useMemo(() => {
     setErr(null);
     setBusy(true);
     try {
+      const lines = String(killText ?? "")
+        .split(/\r?\n/)
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .slice(0, 50);
+
+      const payload = lines.length > 1 ? { lines } : { deaths: killDeaths, text: killText };
       const res = await fetch(`/api/ops/${selected.id}/killlogs`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ deaths: killDeaths, text: killText }),
+        body: JSON.stringify(payload),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || j?.details || "Killlog failed");
@@ -1239,8 +1255,12 @@ const viewerCanJoin = useMemo(() => {
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     {(detail?.participants ?? []).map((p) => {
                       const m = rosterById.get(p.marine_card_id);
-                      const existing = (detail?.marineRatings ?? []).find((x: any) => x.marine_card_id === p.marine_card_id && x.rater_discord_id === discordId);
+                      const existing = (detail?.marineRatings ?? []).find((x: any) => {
+                        const rater = String((x as any)?.rater_discord_id ?? (x as any)?.discord_id ?? "").trim();
+                        return x.marine_card_id === p.marine_card_id && rater && rater === String(discordId ?? "").trim();
+                      });
                       const v = Number(existing?.stars ?? 0);
+                      const existingComment = String((existing as any)?.comment ?? "").trim();
                       return (
                         <div key={p.marine_card_id} className="rounded-xl border border-hud-line/60 bg-black/10 p-3">
                           <div className="font-medium">{m ? `${m.rank} • ${m.name}` : p.marine_card_id}</div>
@@ -1266,6 +1286,11 @@ const viewerCanJoin = useMemo(() => {
                               {!discordId ? "Login nötig" : viewerMayRate ? "klick zum bewerten" : "Nur Teilnehmer"}
                             </div>
                           </div>
+                          {existingComment ? (
+                            <div className="mt-2 rounded-lg border border-hud-line/50 bg-black/10 p-2 text-xs text-hud-muted whitespace-pre-wrap">
+                              <span className="text-hud-text/80">Grund:</span> {existingComment}
+                            </div>
+                          ) : null}
                         </div>
                       );
                     })}
@@ -1316,11 +1341,15 @@ const viewerCanJoin = useMemo(() => {
                         const pos = gridToPercent(selected.map_grid);
                         return (
                           <div className="relative overflow-hidden rounded-2xl border border-hud-line/60 bg-black/30">
-                            <div
-                              className="h-[280px] w-full"
-                              style={{
-                                backgroundImage:
-                                  "radial-gradient(circle at 30% 20%, rgba(255,255,255,0.14), rgba(0,0,0,0) 40%), radial-gradient(circle at 70% 60%, rgba(255,255,255,0.10), rgba(0,0,0,0) 45%), radial-gradient(circle at 20% 80%, rgba(255,255,255,0.08), rgba(0,0,0,0) 35%)",
+                            {/* Canon Galaxy Map (user provided). Remote hosted on Imgur. */}
+                            <img
+                              src={mapImgSrc}
+                              alt="Star Wars Galaxy Map (canon)"
+                              className="h-[280px] w-full object-cover opacity-90"
+                              loading="lazy"
+                              onError={() => {
+                                // one-shot fallback
+                                if (mapImgSrc.endsWith(".jpg")) setMapImgSrc("https://i.imgur.com/zGYMR82.png");
                               }}
                             />
                             {/* grid overlay */}
@@ -1365,12 +1394,12 @@ const viewerCanJoin = useMemo(() => {
                         disabled={!discordId || busy}
                         placeholder="Tode"
                       />
-                      <input
-                        className="hud-input"
+                      <textarea
+                        className="hud-input min-h-[44px]"
                         value={killText}
                         onChange={(e) => setKillText(e.target.value)}
                         disabled={!discordId || busy}
-                        placeholder={!discordId ? "Login nötig" : "z.B. 'von Ewok überrollt'"}
+                        placeholder={!discordId ? "Login nötig" : "Hier kannst du Logs reinkopieren – auch mehrere Zeilen.\nz.B. Esk killed Calm using weapon_swrp_fusioncutter"}
                       />
                       <button
                         className="btn btn-accent"
@@ -1397,6 +1426,20 @@ const viewerCanJoin = useMemo(() => {
                     <div className="mt-4 max-h-[260px] space-y-2 overflow-auto pr-1">
                       {(detail?.killlogs ?? []).map((r: any) => (
                         <div key={String(r.id ?? `${r.created_at}-${r.discord_id}`)} className="rounded-xl border border-hud-line/60 bg-black/10 p-3">
+                          {(() => {
+                            const t = String(r.text ?? "");
+                            const m = t.match(/^(.+?)\s+killed\s+(.+?)\s+using\s+(.+?)\s*$/i);
+                            if (!m) return null;
+                            const killer = String(m[1]).trim();
+                            const victim = String(m[2]).trim();
+                            const weapon = String(m[3]).trim();
+                            return (
+                              <div className="mb-2 text-xs text-hud-muted">
+                                <span className="text-hud-text/90">{killer}</span> → <span className="text-hud-text/90">{victim}</span>
+                                <span className="ml-2">({weapon})</span>
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-start justify-between gap-3">
                             <div className="font-medium">
                               {String(r.display_name ?? r.marine_card_id ?? "Unbekannt")}
@@ -1543,6 +1586,11 @@ const viewerCanJoin = useMemo(() => {
                             <div className="mt-1 text-xs text-hud-muted">
                               Einsatz: {String(r?.operation_title ?? r?.operation_id ?? "—")}
                             </div>
+                            {String((r as any)?.comment ?? "").trim() ? (
+                              <div className="mt-2 rounded-lg border border-hud-line/50 bg-black/10 p-2 text-xs text-hud-muted whitespace-pre-wrap">
+                                <span className="text-hud-text/80">Grund:</span> {String((r as any)?.comment ?? "").trim()}
+                              </div>
+                            ) : null}
                           </div>
                           <div className="text-xs text-hud-muted">{r?.created_at ? fmtDT(String(r.created_at)) : ""}</div>
                         </div>

@@ -25,7 +25,9 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
 }
 
 // POST /api/ops/:id/killlogs
-// body: { deaths: number, text: string }
+// body:
+// - { deaths?: number, text: string } (single)
+// - { lines: string[] } (bulk paste, one DB row per line, deaths=1)
 export async function POST(req: Request, ctx: { params: { id: string } }) {
   const gate = await requireSignedIn(req);
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
@@ -33,11 +35,25 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
   const operation_id = String(ctx.params.id ?? "").trim();
   if (!operation_id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-  const body = await req.json().catch(() => ({}));
-  const deaths = Math.max(1, Math.min(99, Number(body?.deaths ?? 1)));
-  const text = String(body?.text ?? "").trim().slice(0, 500);
-  if (!Number.isFinite(deaths) || deaths <= 0) return NextResponse.json({ error: "Invalid deaths" }, { status: 400 });
-  if (!text) return NextResponse.json({ error: "Missing text", details: "Bitte beschreibe kurz den Killlog." }, { status: 400 });
+  const body = await req.json().catch(() => ({} as any));
+
+  const rawLines: string[] = Array.isArray(body?.lines)
+    ? body.lines.map((x: any) => String(x ?? ""))
+    : String(body?.text ?? "")
+        .split(/\r?\n/)
+        .map((x) => String(x));
+
+  const lines = rawLines
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .slice(0, 50)
+    .map((x) => x.slice(0, 500));
+
+  if (!lines.length) return NextResponse.json({ error: "Missing text", details: "Bitte füge mindestens eine Log-Zeile ein." }, { status: 400 });
+
+  const singleDeaths = Math.max(1, Math.min(99, Number(body?.deaths ?? 1)));
+  const isBulk = lines.length > 1 || Array.isArray(body?.lines);
+  if (!Number.isFinite(singleDeaths) || singleDeaths <= 0) return NextResponse.json({ error: "Invalid deaths" }, { status: 400 });
 
   const sb = supabaseServer();
   const discord_id = String(gate.session?.discordId ?? "").trim();
@@ -57,14 +73,16 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
 
   // If the table isn't created yet, fail gracefully.
   try {
-    const { error } = await sb.from("operation_killlogs").insert({
+    const rows = lines.map((text) => ({
       operation_id,
       discord_id,
       marine_card_id,
       display_name,
-      deaths,
+      deaths: isBulk ? 1 : singleDeaths,
       text,
-    });
+    }));
+
+    const { error } = await sb.from("operation_killlogs").insert(rows);
     if (error) return NextResponse.json({ error: "DB error", details: error.message }, { status: 500 });
   } catch (e: any) {
     return NextResponse.json(

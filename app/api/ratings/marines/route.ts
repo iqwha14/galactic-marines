@@ -26,7 +26,8 @@ export async function GET(req: Request) {
   // Enrich rater names from unit membership table.
   // Enrich marine names from Trello card ids so the overview can show names even if the client hasn't loaded the roster yet.
   const [{ data: unitMembers }, marineNameByCardId] = await Promise.all([
-    sb.from("gm_unit_members").select("discord_id, display_name"),
+    // include marine_card_id so we can fall back to Trello card name when display_name isn't set
+    sb.from("gm_unit_members").select("discord_id, marine_card_id, display_name"),
     (async () => {
       try {
         const boardId = requiredEnv("TRELLO_BOARD_ID");
@@ -47,15 +48,19 @@ export async function GET(req: Request) {
   ]);
 
   const raterNameByDiscordId = new Map<string, string>();
+  const raterCardByDiscordId = new Map<string, string>();
   for (const p of unitMembers ?? []) {
     const id = String((p as any).discord_id ?? "").trim();
     if (!id) continue;
     const name = String((p as any).display_name ?? "").trim();
     if (name) raterNameByDiscordId.set(id, name);
+    const card = String((p as any).marine_card_id ?? "").trim();
+    if (card) raterCardByDiscordId.set(id, card);
   }
 
   const [{ data: ratings, error: rErr }, { data: ops, error: oErr }] = await Promise.all([
-    sb.from("marine_ratings").select("operation_id, marine_card_id, discord_id, stars, created_at"),
+    // include comment so the FE overview can show the reason
+    sb.from("marine_ratings").select("operation_id, marine_card_id, discord_id, stars, comment, created_at"),
     sb.from("operations").select("id,title,start_at"),
   ]);
 
@@ -72,14 +77,20 @@ export async function GET(req: Request) {
     const raterId = String(x.discord_id);
     const score = Number(x.stars);
 
+    // Prefer explicit display_name from gm_unit_members.
+    // If missing, fall back to the rater's Trello card name via their mapped marine_card_id.
+    const fallbackCard = raterCardByDiscordId.get(raterId);
+    const raterNameFallback = fallbackCard ? marineNameByCardId.get(String(fallbackCard)) ?? null : null;
+
     return {
       operation_id: String(x.operation_id),
       operation_title: operation?.title ?? null,
       marine_card_id: marineCardId,
       marine_name: marineNameByCardId.get(marineCardId) ?? null,
       rater_discord_id: raterId,
-      rater_name: raterNameByDiscordId.get(raterId) ?? null,
+      rater_name: raterNameByDiscordId.get(raterId) ?? raterNameFallback,
       score: Number.isFinite(score) ? score : null,
+      comment: String((x as any)?.comment ?? "") || null,
       created_at: x.created_at ?? null,
     };
   });
