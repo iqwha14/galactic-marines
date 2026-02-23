@@ -255,12 +255,7 @@ export default function OpsPanel() {
     return Math.round((r.reduce((a: any, b: any) => a + (Number(b.stars) || 0), 0) / r.length) * 10) / 10;
   }, [detail?.ratings]);
 
-  const viewerIsParticipant = useMemo(() => {
-    const card = String(myMemberCardId ?? "").trim();
-    if (!card) return false;
-    return (detail?.participants ?? []).some((p) => p.marine_card_id === card);
-  }, [detail?.participants, myMemberCardId]);
-
+  
   const isOpOver = useMemo(() => {
     if (!selected) return false;
     if (!selected.end_at) return false;
@@ -269,7 +264,13 @@ export default function OpsPanel() {
     return Date.now() >= d.getTime();
   }, [selected]);
 
-  const viewerCanJoin = useMemo(() => {
+  const viewerIsParticipant = useMemo(() => {
+    const card = String(myMemberCardId ?? "").trim();
+    if (!card) return false;
+    return (detail?.participants ?? []).some((p) => p.marine_card_id === card);
+  }, [detail?.participants, myMemberCardId]);
+
+const viewerCanJoin = useMemo(() => {
     if (!discordId) return false;
     const card = String(myMemberCardId ?? "").trim();
     if (!card) return false;
@@ -303,12 +304,6 @@ export default function OpsPanel() {
     }
   }
 
-  const avgByMarine = useMemo(() => {
-    const map = new Map<string, { total: number; count: number }>();
-    for (const r of ratingsAll) {
-      const name = String(r?.marine_name ?? "Unbekannt");
-      const score = Number(r?.score ?? 0);
-      if 
 
   async function leaveSelectedOp() {
     if (!selected) return;
@@ -326,7 +321,13 @@ export default function OpsPanel() {
     } finally {
       setBusy(false);
     }
-(!Number.isFinite(score) || score <= 0) continue;
+  }
+  const avgByMarine = useMemo(() => {
+    const map = new Map<string, { total: number; count: number }>();
+    for (const r of ratingsAll) {
+      const name = String(r?.marine_name ?? "Unbekannt");
+      const score = Number(r?.score ?? 0);
+      if (!Number.isFinite(score) || score <= 0) continue;
       const cur = map.get(name) ?? { total: 0, count: 0 };
       cur.total += score;
       cur.count += 1;
@@ -1202,11 +1203,7 @@ export default function OpsPanel() {
         </div>
       )}
 
-  async function leaveSelectedOp() {
-    if (!selected) return;
-    setErr(null);
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/ops/${selected.id}/leave`, { method: "POST" });
-      const j = await res.json().catch(() => ({}));
-      i
+
+    </div>
+  );
+}
