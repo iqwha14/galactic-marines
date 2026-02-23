@@ -569,8 +569,7 @@ export default function OpsPanel() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  return (
-    <div className="space-y-4">
+  return <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-hud-line/70 bg-black/20 px-4 py-3">
         <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">Einsatzzentrale</div>
         <div className="flex gap-2">
@@ -1209,5 +1208,5 @@ export default function OpsPanel() {
   }
 
     </div>
-  );
+  </div>;
 }
