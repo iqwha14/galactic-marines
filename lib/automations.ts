@@ -160,6 +160,11 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
   let pollsSent = 0;
   let followupsProcessed = 0;
 
+  // Optional: ping a role for visibility (keeps DB schema unchanged).
+  // Set GM_AKTEN_PING_ROLE_ID="123..." in your environment to enable.
+  const pingRoleId = String(process.env.GM_AKTEN_PING_ROLE_ID ?? "").trim();
+  const pingRole = pingRoleId ? `<@&${pingRoleId}>` : "";
+
   // 1) If a poll is due (and none active), send it.
   const nextPollAt = s.next_poll_at ? new Date(s.next_poll_at) : null;
   const hasActivePoll = !!s.active_poll_created_at;
@@ -167,20 +172,6 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
   if (!hasActivePoll) {
     const due = !nextPollAt || nextPollAt.getTime() <= now.getTime();
     if (due) {
-      const pollText = [
-        "📁 **Aktenkontrolle**",
-        "Wer will freiwillig die Akten kontrollieren?",
-        "(Webhook-only: Bitte meldet euch direkt bei der Führung / FE – Reactions werden nicht ausgewertet.)",
-        "",
-        "⏱ In 3 Stunden wird fair aus dem Pool zugewiesen.",
-      ].join("\n");
-
-      try {
-        await sendDiscordWebhookMessage({ webhookUrl: s.webhook_url, content: pollText, wait: false });
-      } catch {
-        // ignore
-      }
-
       const nextWeekly = computeNextRunAt({
         schedule: "weekly",
         timeZone: s.timezone || "Europe/Berlin",
@@ -189,15 +180,41 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
         dayOfWeek: s.day_of_week,
       });
 
-      await sb
+      // IMPORTANT: Prevent duplicate poll sends on concurrent cron runs.
+      // Claim the poll slot atomically first; only the winner sends the message.
+      const { data: claimed, error: claimErr } = await sb
         .from("gm_akten_settings")
         .update({
           active_poll_created_at: nowISO,
           next_poll_at: nextWeekly ? nextWeekly.toISOString() : null,
         })
-        .eq("id", 1);
+        .eq("id", 1)
+        .is("active_poll_created_at", null)
+        // If next_poll_at is null OR due, allow claim. (We already checked due, this is a safety net.)
+        .or(`next_poll_at.is.null,next_poll_at.lte.${nowISO}`)
+        .select("active_poll_created_at")
+        .maybeSingle();
 
-      pollsSent++;
+      if (!claimErr && claimed?.active_poll_created_at) {
+        const pollText = [
+          pingRole,
+          "📁 **Aktenkontrolle**",
+          "Wer will freiwillig die Akten kontrollieren?",
+          "(Webhook-only: Bitte meldet euch direkt bei der Führung / FE – Reactions werden nicht ausgewertet.)",
+          "",
+          "⏱ In 3 Stunden wird fair aus dem Pool zugewiesen.",
+        ]
+          .filter(Boolean)
+          .join("\n");
+
+        try {
+          await sendDiscordWebhookMessage({ webhookUrl: s.webhook_url, content: pollText, wait: false });
+        } catch {
+          // ignore
+        }
+
+        pollsSent++;
+      }
     }
   }
 
@@ -223,8 +240,10 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
       const backup = pool.length > 1 ? pool[1] : null;
 
       if (primary) {
-        const line1 = `📁 **Aktenkontrolle**: **${primary.name}** ist dran.`;
-        const line2 = backup ? `Wenn er nicht kann: **${backup.name}**` : "";
+        const primaryLabel = String(primary.label ?? primary.name);
+        const backupLabel = backup ? String(backup.label ?? backup.name) : null;
+        const line1 = `📁 **Aktenkontrolle**: ${mentionOf(primary)} ist dran. (${primaryLabel})`;
+        const line2 = backup ? `Wenn er nicht kann: ${mentionOf(backup)} (${backupLabel})` : "";
         const text = [line1, line2].filter(Boolean).join("\n");
 
         try {
