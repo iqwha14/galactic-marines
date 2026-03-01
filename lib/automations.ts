@@ -200,7 +200,7 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
           pingRole,
           "📁 **Aktenkontrolle**",
           "Wer will freiwillig die Akten kontrollieren?",
-          "(Webhook-only: Bitte meldet euch direkt bei der Führung / FE – Reactions werden nicht ausgewertet.)",
+          "(Bitte meldet euch direkt im FE Chat – Reactions werden nicht ausgewertet.)",
           "",
           "⏱ In 3 Stunden wird fair aus dem Pool zugewiesen.",
         ]
