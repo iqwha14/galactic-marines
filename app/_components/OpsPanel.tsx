@@ -76,6 +76,11 @@ function fmtDT(iso: string) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("de-DE");
 }
 
+function isEndedStatus(value: unknown) {
+  const s = String(value ?? "").trim().toLowerCase();
+  return s === "beendet" || s === "ended" || s === "complete" || s === "completed" || s === "done" || s === "finished";
+}
+
 function toRfc3339(input: string) {
   const s = String(input ?? "").trim();
   if (!s) return "";
@@ -628,10 +633,14 @@ export default function OpsPanel() {
     setErr(null);
     setBusy(true);
     try {
+      const payload: any = { status: nextStatus };
+      if (isEndedStatus(nextStatus) && !selected.end_at) {
+        payload.end_at = new Date().toISOString();
+      }
       const res = await fetch(`/api/ops/${selected.id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
+        body: JSON.stringify(payload),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || j?.details || "Status update failed");
@@ -1385,7 +1394,7 @@ export default function OpsPanel() {
                   {!discordId ? <div className="mt-2 text-xs text-hud-muted">Login nötig.</div> : null}
                   {discordId && !viewerIsParticipant ? <div className="mt-2 text-xs text-hud-muted">Nur Teilnehmer dürfen abstimmen.</div> : null}
                   {discordId && viewerIsParticipant && !isOpOver ? (
-                    <div className="mt-2 text-xs text-hud-muted">Wahl ist nach Einsatzende verfügbar (end_at setzen).</div>
+                    <div className="mt-2 text-xs text-hud-muted">Wahl ist nach Einsatzende verfügbar (Status auf „Beendet“ setzen oder end_at eintragen).</div>
                   ) : null}
 
                   {detail?.mvp?.counts?.length ? (

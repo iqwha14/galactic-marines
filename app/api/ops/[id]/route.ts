@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase";
 import { requireEditor } from "@/lib/authz";
 
+function isEndedStatus(value: unknown): boolean {
+  const s = String(value ?? "").trim().toLowerCase();
+  return s === "beendet" || s === "ended" || s === "complete" || s === "completed" || s === "done" || s === "finished";
+}
+
 function normalizeDateTime(value: unknown): string {
   const raw = String(value ?? "").trim();
   if (!raw) throw new Error("empty");
@@ -69,14 +74,14 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     if (discordIds.size) {
       const { data } = await sb
         .from("gm_unit_members")
-        .select("discord_id, marine_card_id, display_name")
+        .select("*")
         .in("discord_id", [...discordIds]);
       unitMembersByDiscord = data ?? [];
     }
     if (cardIds.size) {
       const { data } = await sb
         .from("gm_unit_members")
-        .select("discord_id, marine_card_id, display_name")
+        .select("*")
         .in("marine_card_id", [...cardIds]);
       unitMembersByCard = data ?? [];
     }
@@ -93,7 +98,7 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
   for (const m of unitMembers) {
     const did = String((m as any)?.discord_id ?? "").trim();
     const cid = String((m as any)?.marine_card_id ?? "").trim();
-    const dn = String((m as any)?.display_name ?? "").trim();
+    const dn = String((m as any)?.display_name ?? (m as any)?.name ?? "").trim();
     if (did && dn && !displayNameByDiscord.has(did)) displayNameByDiscord.set(did, dn);
     if (cid && dn && !displayNameByCard.has(cid)) displayNameByCard.set(cid, dn);
     if (did && cid && !cardByDiscord.has(did)) cardByDiscord.set(did, cid);
@@ -185,6 +190,15 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     killlogs = [];
   }
 
+  const opEnded = (() => {
+    const endRaw = String((op as any)?.end_at ?? "").trim();
+    if (endRaw) {
+      const d = new Date(endRaw);
+      if (!Number.isNaN(d.getTime()) && d.getTime() <= Date.now()) return true;
+    }
+    return isEndedStatus((op as any)?.status);
+  })();
+
   let mvp: any = null;
   try {
     const { data: votes } = await sb
@@ -216,7 +230,7 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     if (participantCardIds.length) {
       const { data: memberMap } = await sb
         .from("gm_unit_members")
-        .select("discord_id, marine_card_id")
+        .select("*")
         .in("marine_card_id", participantCardIds);
       eligible = (memberMap ?? []).filter((m: any) => String(m?.discord_id ?? "").trim()).length;
     }
@@ -230,6 +244,7 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
       eligible,
       voted: new Set((votes ?? []).map((v: any) => String((v as any)?.voter_discord_id ?? "").trim()).filter(Boolean)).size,
       votes: votes ?? [],
+      can_vote: opEnded,
     };
   } catch {
     mvp = null;

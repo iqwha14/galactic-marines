@@ -3,12 +3,18 @@ import { supabaseServer } from "@/lib/supabase";
 import { requireSignedIn } from "@/lib/authz";
 import { sendDiscordMvpEmbed } from "@/app/api/_lib/discord";
 
+function isEndedStatus(value: unknown): boolean {
+  const s = String(value ?? "").trim().toLowerCase();
+  return s === "beendet" || s === "ended" || s === "complete" || s === "completed" || s === "done" || s === "finished";
+}
+
 function isOpOver(op: any): boolean {
   const endRaw = String(op?.end_at ?? "").trim();
-  if (!endRaw) return false;
-  const end = new Date(endRaw);
-  if (Number.isNaN(end.getTime())) return false;
-  return end.getTime() <= Date.now();
+  if (endRaw) {
+    const end = new Date(endRaw);
+    if (!Number.isNaN(end.getTime()) && end.getTime() <= Date.now()) return true;
+  }
+  return isEndedStatus(op?.status);
 }
 
 /**
@@ -61,8 +67,8 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
 
   const idsToResolve = Array.from(new Set([...participantRawIds, rawMvpTarget, voterDiscordId].filter(Boolean)));
   const [{ data: byDiscord }, { data: byCard }] = await Promise.all([
-    sb.from("gm_unit_members").select("discord_id, marine_card_id, display_name").in("discord_id", idsToResolve),
-    sb.from("gm_unit_members").select("discord_id, marine_card_id, display_name").in("marine_card_id", idsToResolve),
+    sb.from("gm_unit_members").select("*").in("discord_id", idsToResolve),
+    sb.from("gm_unit_members").select("*").in("marine_card_id", idsToResolve),
   ]);
 
   const cardByDiscord = new Map<string, string>();
@@ -70,7 +76,7 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
   for (const m of [...(byDiscord ?? []), ...(byCard ?? [])]) {
     const did = String((m as any)?.discord_id ?? "").trim();
     const cid = String((m as any)?.marine_card_id ?? "").trim();
-    const dn = String((m as any)?.display_name ?? "").trim();
+    const dn = String((m as any)?.display_name ?? (m as any)?.name ?? "").trim();
     if (did && cid && !cardByDiscord.has(did)) cardByDiscord.set(did, cid);
     if (cid && dn && !displayNameByCard.has(cid)) displayNameByCard.set(cid, dn);
   }
@@ -125,7 +131,7 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     // Determine eligible voters: participants with a discord_id mapping
     const { data: memberMap } = await sb
       .from("gm_unit_members")
-      .select("discord_id, marine_card_id, display_name")
+      .select("*")
       .in("marine_card_id", participantCardIds);
 
     const eligibleDiscordIds = (memberMap ?? [])
@@ -179,7 +185,7 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
 
     for (const m of memberMap ?? []) {
       const cid = String((m as any)?.marine_card_id ?? "").trim();
-      const dn = String((m as any)?.display_name ?? "").trim();
+      const dn = String((m as any)?.display_name ?? (m as any)?.name ?? "").trim();
       if (cid && dn && !displayNameByCard.has(cid)) displayNameByCard.set(cid, dn);
     }
 
