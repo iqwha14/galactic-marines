@@ -196,13 +196,19 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
         .maybeSingle();
 
       if (!claimErr && claimed?.active_poll_created_at) {
+        const followupMinutes = Math.max(1, Number(s.followup_delay_minutes ?? 180));
+        const followupHours = followupMinutes / 60;
+        const followupLabel = Number.isInteger(followupHours)
+          ? `${followupHours} Stunde${followupHours === 1 ? "" : "n"}`
+          : `${followupMinutes} Minuten`;
+
         const pollText = [
           pingRole,
           "📁 **Aktenkontrolle**",
           "Wer will freiwillig die Akten kontrollieren?",
           "(Bitte meldet euch direkt im FE Chat – Reactions werden nicht ausgewertet.)",
           "",
-          "⏱ In 3 Stunden wird fair aus dem Pool zugewiesen.",
+          `⏱ In ${followupLabel} wird fair aus dem Pool zugewiesen.`,
         ]
           .filter(Boolean)
           .join("\n");
@@ -224,6 +230,19 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
     const dueAt = new Date(created.getTime() + Math.max(1, s.followup_delay_minutes) * 60_000);
 
     if (dueAt.getTime() <= now.getTime()) {
+      // Hard de-duplication: if this poll was already finalized once, do not send again.
+      const { data: existingHistory } = await sb
+        .from("gm_akten_history")
+        .select("id")
+        .eq("mode", "auto")
+        .eq("poll_created_at", s.active_poll_created_at)
+        .limit(1);
+
+      if ((existingHistory ?? []).length > 0) {
+        await sb.from("gm_akten_settings").update({ active_poll_created_at: null }).eq("id", 1);
+        return { pollsSent, followupsProcessed };
+      }
+
       const { data: poolData } = await sb.from("gm_akten_pool").select("*");
       const pool = (poolData ?? []) as AktenPoolRow[];
 

@@ -24,6 +24,7 @@ type Report = {
   id: string;
   operation_id: string;
   author_discord_id: string;
+  author_name?: string | null;
   title: string;
   content_md: string;
   created_at: string;
@@ -144,6 +145,7 @@ export default function OpsPanel() {
   const [ops, setOps] = useState<Operation[]>([]);
   const [selected, setSelected] = useState<Operation | null>(null);
   const [detail, setDetail] = useState<{
+    operation: Operation | null;
     participants: Participant[];
     reports: Report[];
     ratings: any[];
@@ -222,7 +224,9 @@ export default function OpsPanel() {
     const res = await fetch(`/api/ops/${id}`, { cache: "no-store" });
     const j = await res.json();
     if (!res.ok) throw new Error(j?.error || "Detail load failed");
+    if (j?.operation?.id) setSelected((prev) => (prev?.id === j.operation.id ? j.operation : prev));
     setDetail({
+      operation: j.operation ?? null,
       participants: j.participants ?? [],
       reports: j.reports ?? [],
       ratings: j.ratings ?? [],
@@ -329,12 +333,12 @@ export default function OpsPanel() {
   }, [detail?.killlogs]);
 
   const isOpOver = useMemo(() => {
-    if (!selected) return false;
-    if (!selected.end_at) return false;
-    const d = new Date(selected.end_at);
+    const op = detail?.operation ?? selected;
+    if (!op?.end_at) return false;
+    const d = new Date(op.end_at);
     if (Number.isNaN(d.getTime())) return false;
     return Date.now() >= d.getTime();
-  }, [selected]);
+  }, [detail?.operation, selected]);
 
   const viewerIsParticipant = useMemo(() => {
     const card = String(myMemberCardId ?? "").trim();
@@ -1610,7 +1614,9 @@ export default function OpsPanel() {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="font-medium">{r.title}</div>
-                            <div className="text-xs text-hud-muted">{fmtDT(r.created_at)}</div>
+                            <div className="text-xs text-hud-muted">
+                              Verfasst von {String(r.author_name ?? r.author_discord_id ?? "Unbekannt")} · {fmtDT(r.created_at)}
+                            </div>
                           </div>
                         </div>
                         <div className="mt-2 whitespace-pre-wrap text-sm text-hud-text/90">{r.content_md}</div>
