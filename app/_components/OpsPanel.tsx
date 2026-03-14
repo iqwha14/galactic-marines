@@ -19,7 +19,7 @@ type Operation = {
   created_by_discord_id: string;
   created_at: string;
 };
-type Participant = { operation_id: string; marine_card_id: string; role: string | null; is_lead: boolean };
+type Participant = { operation_id: string; marine_card_id: string; effective_marine_card_id?: string | null; display_name?: string | null; role: string | null; is_lead: boolean };
 type Report = {
   id: string;
   operation_id: string;
@@ -289,6 +289,27 @@ export default function OpsPanel() {
 
   const rosterById = useMemo(() => new Map(roster.map((m) => [m.id, m])), [roster]);
 
+  const participantLabel = (p: Participant | null | undefined) => {
+    const effectiveId = String(p?.effective_marine_card_id ?? p?.marine_card_id ?? "").trim();
+    const rosterMember = rosterById.get(effectiveId) ?? rosterById.get(String(p?.marine_card_id ?? "").trim());
+    if (rosterMember) return `${rosterMember.rank} • ${rosterMember.name}`;
+    const mappedName = String(p?.display_name ?? "").trim();
+    if (mappedName) return mappedName;
+    return effectiveId || String(p?.marine_card_id ?? "").trim() || "Unbekannt";
+  };
+
+  const participantByAnyId = useMemo(() => {
+    const map = new Map<string, Participant>();
+    for (const p of detail?.participants ?? []) {
+      const rawId = String(p?.marine_card_id ?? "").trim();
+      const effectiveId = String(p?.effective_marine_card_id ?? rawId).trim();
+      if (rawId) map.set(rawId, p);
+      if (effectiveId) map.set(effectiveId, p);
+    }
+    return map;
+  }, [detail?.participants]);
+
+
   useEffect(() => {
     if (mvpPick) return;
     if (!myMemberCardId) return;
@@ -343,7 +364,7 @@ export default function OpsPanel() {
   const viewerIsParticipant = useMemo(() => {
     const card = String(myMemberCardId ?? "").trim();
     if (!card) return false;
-    return (detail?.participants ?? []).some((p) => p.marine_card_id === card);
+    return (detail?.participants ?? []).some((p) => String(p.effective_marine_card_id ?? p.marine_card_id) === card || String(p.marine_card_id) === card);
   }, [detail?.participants, myMemberCardId]);
 
   // If the creator created the op and was already added by FE as lead/participant,
@@ -1251,7 +1272,7 @@ export default function OpsPanel() {
                         return (
                           <div key={p.marine_card_id} className="rounded-xl border border-hud-line/60 bg-black/10 p-3">
                             <div className="flex items-center justify-between gap-2">
-                              <div className="font-medium">{m ? `${m.rank} • ${m.name}` : p.marine_card_id}</div>
+                              <div className="font-medium">{participantLabel(p)}</div>
                               <div className="text-xs text-hud-muted">{p.is_lead ? "Einsatzleitung" : "Teilnehmer"}</div>
                             </div>
                             <div className="mt-1 text-xs text-hud-muted">{m?.unitGroup ?? "—"}</div>
@@ -1323,7 +1344,7 @@ export default function OpsPanel() {
                         🌟 MVP wurde announced: <span className="text-white/90">{fmtDT(String(detail.mvp.announced_at))}</span>
                       </div>
                       <div className="mt-2 text-xs text-hud-muted">
-                        MVP: <span className="text-hud-text">{String(detail?.mvp?.mvp_card_id ?? "—")}</span>
+                        MVP: <span className="text-hud-text">{String(detail?.mvp?.mvp_name ?? detail?.mvp?.mvp_card_id ?? "—")}</span>
                       </div>
                     </div>
                   ) : null}
@@ -1336,14 +1357,16 @@ export default function OpsPanel() {
                       disabled={!discordId || !viewerIsParticipant || !isOpOver || mvpBusy || !!detail?.mvp?.announced_at}
                     >
                       {(detail?.participants ?? [])
-                        .map((p) => p.marine_card_id)
-                        .filter((cid) => cid && cid !== myMemberCardId)
-                        .map((cid) => {
-                          const m = rosterById.get(cid);
-                          const label = m ? `${m.rank} • ${m.name}` : cid;
+                        .filter((p) => {
+                          const rawId = String(p?.marine_card_id ?? "").trim();
+                          const effectiveId = String(p?.effective_marine_card_id ?? rawId).trim();
+                          return !!rawId && rawId !== myMemberCardId && effectiveId !== myMemberCardId;
+                        })
+                        .map((p) => {
+                          const rawId = String(p?.marine_card_id ?? "").trim();
                           return (
-                            <option key={cid} value={cid}>
-                              {label}
+                            <option key={rawId} value={rawId}>
+                              {participantLabel(p)}
                             </option>
                           );
                         })}
@@ -1371,8 +1394,9 @@ export default function OpsPanel() {
                       <div className="mt-2 grid gap-2 md:grid-cols-2">
                         {(detail.mvp.counts as any[]).slice(0, 8).map((c: any) => {
                           const cid = String(c?.marine_card_id ?? "");
+                          const p = participantByAnyId.get(cid);
                           const m = rosterById.get(cid);
-                          const label = m ? `${m.rank} • ${m.name}` : cid;
+                          const label = m ? `${m.rank} • ${m.name}` : String(c?.display_name ?? (p ? participantLabel(p) : cid));
                           return (
                             <div key={cid} className="rounded-xl border border-hud-line/60 bg-black/10 p-3">
                               <div className="flex items-center justify-between gap-2">

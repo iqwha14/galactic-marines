@@ -33,11 +33,9 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     sb.from("operation_reports").select("*").eq("operation_id", id).order("created_at", { ascending: false }),
   ]);
 
-  // Best-effort: resolve names from gm_unit_members so the UI doesn't show "Unbekannt".
-  // - rater names (discord_id -> display_name or Trello card name fallback)
-  // - rated marine names (marine_card_id -> display_name or Trello card name fallback)
   const discordIds = new Set<string>();
   const cardIds = new Set<string>();
+
   for (const r of ratings ?? []) {
     const did = String((r as any)?.discord_id ?? "").trim();
     if (did) discordIds.add(did);
@@ -49,43 +47,67 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     if (cid) cardIds.add(cid);
   }
   for (const p of participants ?? []) {
-    const cid = String((p as any)?.marine_card_id ?? "").trim();
-    if (cid) cardIds.add(cid);
+    const raw = String((p as any)?.marine_card_id ?? "").trim();
+    if (!raw) continue;
+    cardIds.add(raw);
+    // Legacy installs may have stored discord ids in operation_participants.marine_card_id.
+    if (/^\d{8,}$/.test(raw)) discordIds.add(raw);
+  }
+  for (const r of reports ?? []) {
+    const did = String((r as any)?.author_discord_id ?? "").trim();
+    if (did) discordIds.add(did);
+  }
+  const opMvpId = String((op as any)?.mvp_card_id ?? "").trim();
+  if (opMvpId) {
+    cardIds.add(opMvpId);
+    if (/^\d{8,}$/.test(opMvpId)) discordIds.add(opMvpId);
   }
 
-  // Load unit member mapping for all relevant ids.
-  let unitMembers: any[] = [];
+  let unitMembersByDiscord: any[] = [];
+  let unitMembersByCard: any[] = [];
   try {
-    const ors: string[] = [];
-    if (discordIds.size) ors.push(`discord_id.in.(${[...discordIds].map((x) => `"${x}"`).join(",")})`);
-    if (cardIds.size) ors.push(`marine_card_id.in.(${[...cardIds].map((x) => `"${x}"`).join(",")})`);
-    if (ors.length) {
-      const { data } = await sb.from("gm_unit_members").select("discord_id, marine_card_id, display_name").or(ors.join(","));
-      unitMembers = data ?? [];
+    if (discordIds.size) {
+      const { data } = await sb
+        .from("gm_unit_members")
+        .select("discord_id, marine_card_id, display_name")
+        .in("discord_id", [...discordIds]);
+      unitMembersByDiscord = data ?? [];
+    }
+    if (cardIds.size) {
+      const { data } = await sb
+        .from("gm_unit_members")
+        .select("discord_id, marine_card_id, display_name")
+        .in("marine_card_id", [...cardIds]);
+      unitMembersByCard = data ?? [];
     }
   } catch {
-    unitMembers = [];
+    unitMembersByDiscord = [];
+    unitMembersByCard = [];
   }
 
+  const unitMembers = [...unitMembersByDiscord, ...unitMembersByCard];
   const displayNameByDiscord = new Map<string, string>();
   const displayNameByCard = new Map<string, string>();
   const cardByDiscord = new Map<string, string>();
-  for (const m of unitMembers ?? []) {
+
+  for (const m of unitMembers) {
     const did = String((m as any)?.discord_id ?? "").trim();
     const cid = String((m as any)?.marine_card_id ?? "").trim();
     const dn = String((m as any)?.display_name ?? "").trim();
-    if (did && dn) displayNameByDiscord.set(did, dn);
-    if (cid && dn) displayNameByCard.set(cid, dn);
-    if (did && cid) cardByDiscord.set(did, cid);
+    if (did && dn && !displayNameByDiscord.has(did)) displayNameByDiscord.set(did, dn);
+    if (cid && dn && !displayNameByCard.has(cid)) displayNameByCard.set(cid, dn);
+    if (did && cid && !cardByDiscord.has(did)) cardByDiscord.set(did, cid);
   }
 
-  // Trello card name fallback (optional; avoids "Unbekannt" when display_name isn't set).
-  // This runs only if we actually need it.
   let trelloNameByCard = new Map<string, string>();
   try {
-    const needFallback = [...cardByDiscord.values()].some((cid) => cid && !displayNameByCard.get(cid)) ||
-      [...cardIds].some((cid) => cid && !displayNameByCard.get(cid));
-    if (needFallback) {
+    const fallbackCardIds = new Set<string>();
+    for (const cid of [...cardIds, ...cardByDiscord.values()]) {
+      if (!cid) continue;
+      if (!displayNameByCard.get(cid) && !/^\d{8,}$/.test(cid)) fallbackCardIds.add(cid);
+    }
+
+    if (fallbackCardIds.size) {
       const { requiredEnv, trelloBaseParams } = await import("@/app/api/_lib/trello");
       const boardId = requiredEnv("TRELLO_BOARD_ID");
       const { key, token } = trelloBaseParams();
@@ -104,21 +126,38 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     trelloNameByCard = new Map<string, string>();
   }
 
+  const effectiveCardId = (rawValue: any) => {
+    const raw = String(rawValue ?? "").trim();
+    if (!raw) return "";
+    return cardByDiscord.get(raw) ?? raw;
+  };
   const nameForDiscord = (didRaw: any) => {
     const did = String(didRaw ?? "").trim();
     if (!did) return null;
     const direct = displayNameByDiscord.get(did);
     if (direct) return direct;
     const cid = cardByDiscord.get(did);
-    return cid ? trelloNameByCard.get(cid) ?? null : null;
+    if (cid) return displayNameByCard.get(cid) ?? trelloNameByCard.get(cid) ?? null;
+    return null;
   };
   const nameForCard = (cidRaw: any) => {
-    const cid = String(cidRaw ?? "").trim();
-    if (!cid) return null;
-    const direct = displayNameByCard.get(cid);
+    const effective = effectiveCardId(cidRaw);
+    if (!effective) return null;
+    const direct = displayNameByCard.get(effective);
     if (direct) return direct;
-    return trelloNameByCard.get(cid) ?? null;
+    return trelloNameByCard.get(effective) ?? nameForDiscord(cidRaw);
   };
+
+  const participantsEnriched = (participants ?? []).map((p: any) => {
+    const rawId = String(p?.marine_card_id ?? "").trim();
+    const resolvedCardId = effectiveCardId(rawId);
+    return {
+      ...p,
+      marine_card_id: rawId,
+      effective_marine_card_id: resolvedCardId || rawId,
+      display_name: nameForCard(rawId),
+    };
+  });
 
   const ratingsEnriched = (ratings ?? []).map((r: any) => ({
     ...r,
@@ -129,8 +168,11 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     rater_name: r?.rater_name ?? nameForDiscord(r?.discord_id),
     marine_name: r?.marine_name ?? nameForCard(r?.marine_card_id),
   }));
+  const reportsEnriched = (reports ?? []).map((r: any) => ({
+    ...r,
+    author_name: r?.author_name ?? nameForDiscord(r?.author_discord_id),
+  }));
 
-  // Killlogs are optional (table might not exist yet in some installs)
   let killlogs: any[] = [];
   try {
     const { data } = await sb
@@ -143,7 +185,6 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
     killlogs = [];
   }
 
-  // MVP votes are optional (table might not exist yet in some installs)
   let mvp: any = null;
   try {
     const { data: votes } = await sb
@@ -153,16 +194,24 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
 
     const counts = new Map<string, number>();
     for (const v of votes ?? []) {
-      const cid = String((v as any)?.mvp_card_id ?? "").trim();
+      const rawId = String((v as any)?.mvp_card_id ?? "").trim();
+      const cid = effectiveCardId(rawId);
       if (!cid) continue;
       counts.set(cid, (counts.get(cid) ?? 0) + 1);
     }
+
     const countsArr = [...counts.entries()]
-      .map(([marine_card_id, votes]) => ({ marine_card_id, votes }))
+      .map(([marine_card_id, votes]) => ({
+        marine_card_id,
+        votes,
+        display_name: nameForCard(marine_card_id),
+      }))
       .sort((a, b) => b.votes - a.votes);
 
-    // Eligible voters = participants that have a gm_unit_members mapping
-    const participantCardIds = (participants ?? []).map((p: any) => String(p?.marine_card_id ?? "").trim()).filter(Boolean);
+    const participantCardIds = (participantsEnriched ?? [])
+      .map((p: any) => String(p?.effective_marine_card_id ?? p?.marine_card_id ?? "").trim())
+      .filter(Boolean);
+
     let eligible = 0;
     if (participantCardIds.length) {
       const { data: memberMap } = await sb
@@ -172,9 +221,11 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
       eligible = (memberMap ?? []).filter((m: any) => String(m?.discord_id ?? "").trim()).length;
     }
 
+    const opWinnerCardId = effectiveCardId((op as any)?.mvp_card_id);
     mvp = {
       announced_at: (op as any)?.mvp_announced_at ?? null,
-      mvp_card_id: (op as any)?.mvp_card_id ?? null,
+      mvp_card_id: opWinnerCardId || ((op as any)?.mvp_card_id ?? null),
+      mvp_name: nameForCard((op as any)?.mvp_card_id),
       counts: countsArr,
       eligible,
       voted: new Set((votes ?? []).map((v: any) => String((v as any)?.voter_discord_id ?? "").trim()).filter(Boolean)).size,
@@ -186,10 +237,10 @@ export async function GET(_: Request, ctx: { params: { id: string } }) {
 
   return NextResponse.json({
     operation: op,
-    participants: participants ?? [],
+    participants: participantsEnriched,
     ratings: ratingsEnriched,
     marineRatings: marineRatingsEnriched,
-    reports: reports ?? [],
+    reports: reportsEnriched,
     killlogs,
     mvp,
   });

@@ -34,8 +34,8 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
   if (!operationId) return NextResponse.json({ error: "Missing operation id" }, { status: 400 });
 
   const body = await req.json().catch(() => ({}));
-  const mvpCardId = String(body?.mvp_card_id ?? "").trim();
-  if (!mvpCardId) return NextResponse.json({ error: "Missing mvp_card_id" }, { status: 400 });
+  const rawMvpTarget = String(body?.mvp_card_id ?? "").trim();
+  if (!rawMvpTarget) return NextResponse.json({ error: "Missing mvp_card_id" }, { status: 400 });
 
   const sb = supabaseServer();
 
@@ -52,28 +52,47 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
     .select("marine_card_id")
     .eq("operation_id", operationId);
 
-  const participantCardIds = (participants ?? []).map((p: any) => String(p?.marine_card_id ?? "").trim()).filter(Boolean);
-  if (!participantCardIds.length) {
+  const participantRawIds = (participants ?? []).map((p: any) => String(p?.marine_card_id ?? "").trim()).filter(Boolean);
+  if (!participantRawIds.length) {
     return NextResponse.json({ error: "Keine Teilnehmer im Einsatz." }, { status: 400 });
   }
+
+  const voterDiscordId = String(gate.session?.discordId ?? "").trim();
+
+  const idsToResolve = Array.from(new Set([...participantRawIds, rawMvpTarget, voterDiscordId].filter(Boolean)));
+  const [{ data: byDiscord }, { data: byCard }] = await Promise.all([
+    sb.from("gm_unit_members").select("discord_id, marine_card_id, display_name").in("discord_id", idsToResolve),
+    sb.from("gm_unit_members").select("discord_id, marine_card_id, display_name").in("marine_card_id", idsToResolve),
+  ]);
+
+  const cardByDiscord = new Map<string, string>();
+  const displayNameByCard = new Map<string, string>();
+  for (const m of [...(byDiscord ?? []), ...(byCard ?? [])]) {
+    const did = String((m as any)?.discord_id ?? "").trim();
+    const cid = String((m as any)?.marine_card_id ?? "").trim();
+    const dn = String((m as any)?.display_name ?? "").trim();
+    if (did && cid && !cardByDiscord.has(did)) cardByDiscord.set(did, cid);
+    if (cid && dn && !displayNameByCard.has(cid)) displayNameByCard.set(cid, dn);
+  }
+
+  const toEffectiveCardId = (raw: string) => {
+    const v = String(raw ?? "").trim();
+    if (!v) return "";
+    return cardByDiscord.get(v) ?? v;
+  };
+
+  const participantCardIds = Array.from(new Set(participantRawIds.map(toEffectiveCardId).filter(Boolean)));
+  const mvpCardId = toEffectiveCardId(rawMvpTarget);
 
   if (!participantCardIds.includes(mvpCardId)) {
     return NextResponse.json({ error: "MVP muss Teilnehmer dieses Einsatzes sein." }, { status: 400 });
   }
 
-  // Resolve voter's own unit member card id (must exist)
-  const voterDiscordId = String(gate.session?.discordId ?? "").trim();
-  const { data: me, error: meErr } = await sb
-    .from("gm_unit_members")
-    .select("marine_card_id, display_name")
-    .eq("discord_id", voterDiscordId)
-    .single();
-
-  if (meErr || !me?.marine_card_id) {
+  const myCardId = toEffectiveCardId(voterDiscordId);
+  if (!myCardId) {
     return NextResponse.json({ error: "Du bist nicht als Einheit-Mitglied hinterlegt (gm_unit_members)." }, { status: 403 });
   }
 
-  const myCardId = String((me as any).marine_card_id ?? "").trim();
   if (!participantCardIds.includes(myCardId)) {
     return NextResponse.json({ error: "Nur Teilnehmer des Einsatzes dürfen abstimmen." }, { status: 403 });
   }
@@ -158,11 +177,10 @@ export async function POST(req: Request, ctx: { params: { id: string } }) {
       return NextResponse.json({ success: true, tie: true, announced: false });
     }
 
-    const displayNameByCard = new Map<string, string>();
     for (const m of memberMap ?? []) {
       const cid = String((m as any)?.marine_card_id ?? "").trim();
       const dn = String((m as any)?.display_name ?? "").trim();
-      if (cid && dn) displayNameByCard.set(cid, dn);
+      if (cid && dn && !displayNameByCard.has(cid)) displayNameByCard.set(cid, dn);
     }
 
     // Trello fallback name (best-effort)
