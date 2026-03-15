@@ -138,3 +138,23 @@ export async function sendDiscordMvpEmbed(params: {
   // Dedicated MVP webhook if set; otherwise fall back to the main one.
   await postEmbedsTo(process.env.DISCORD_WEBHOOK_MVP_URL || process.env.DISCORD_WEBHOOK_URL, [embed]);
 }
+
+
+export async function sendDiscordNoMvpEmbed(params: {
+  operationTitle: string;
+  operationId?: string;
+  timestamp?: string;
+}) {
+  const embed: Embed = {
+    title: "🌑 Kein MVP",
+    description: `Beim Einsatz **${safe(params.operationTitle)}** gab es keinen MVP (es wurde keiner erwählt).`,
+    color: 0x95a5a6,
+    timestamp: params.timestamp ?? isoNow(),
+  };
+
+  if (params.operationId) {
+    embed.fields = [{ name: "Operation ID", value: safe(params.operationId), inline: false }];
+  }
+
+  await postEmbedsTo(process.env.DISCORD_WEBHOOK_MVP_URL || process.env.DISCORD_WEBHOOK_URL, [embed]);
+}

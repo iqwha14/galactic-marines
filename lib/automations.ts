@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { computeNextRunAt } from "@/lib/timezone";
 import { sendDiscordWebhookMessage } from "@/lib/discord_automations";
+import { sendDiscordMvpEmbed, sendDiscordNoMvpEmbed } from "@/app/api/_lib/discord";
 
 type PlannedMessageRow = {
   id: string;
@@ -75,6 +76,10 @@ export async function runDiscordAutomations(): Promise<{
   const akten = await processAktenkontrolle().catch((e: any) => {
     warnings.push(`aktenkontrolle: ${e?.message ?? String(e)}`);
     return { pollsSent: 0, followupsProcessed: 0 };
+  });
+
+  await processOperationMvpFinalization().catch((e: any) => {
+    warnings.push(`mvp_finalization: ${e?.message ?? String(e)}`);
   });
 
   return { ok: true, planned, akten, warnings };
@@ -196,19 +201,13 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
         .maybeSingle();
 
       if (!claimErr && claimed?.active_poll_created_at) {
-        const followupMinutes = Math.max(1, Number(s.followup_delay_minutes ?? 180));
-        const followupHours = followupMinutes / 60;
-        const followupLabel = Number.isInteger(followupHours)
-          ? `${followupHours} Stunde${followupHours === 1 ? "" : "n"}`
-          : `${followupMinutes} Minuten`;
-
         const pollText = [
           pingRole,
           "📁 **Aktenkontrolle**",
           "Wer will freiwillig die Akten kontrollieren?",
           "(Bitte meldet euch direkt im FE Chat – Reactions werden nicht ausgewertet.)",
           "",
-          `⏱ In ${followupLabel} wird fair aus dem Pool zugewiesen.`,
+          "⏱ In 3 Stunden wird fair aus dem Pool zugewiesen.",
         ]
           .filter(Boolean)
           .join("\n");
@@ -230,19 +229,6 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
     const dueAt = new Date(created.getTime() + Math.max(1, s.followup_delay_minutes) * 60_000);
 
     if (dueAt.getTime() <= now.getTime()) {
-      // Hard de-duplication: if this poll was already finalized once, do not send again.
-      const { data: existingHistory } = await sb
-        .from("gm_akten_history")
-        .select("id")
-        .eq("mode", "auto")
-        .eq("poll_created_at", s.active_poll_created_at)
-        .limit(1);
-
-      if ((existingHistory ?? []).length > 0) {
-        await sb.from("gm_akten_settings").update({ active_poll_created_at: null }).eq("id", 1);
-        return { pollsSent, followupsProcessed };
-      }
-
       const { data: poolData } = await sb.from("gm_akten_pool").select("*");
       const pool = (poolData ?? []) as AktenPoolRow[];
 
@@ -313,4 +299,139 @@ async function processAktenkontrolle(): Promise<{ pollsSent: number; followupsPr
   }
 
   return { pollsSent, followupsProcessed };
+}
+
+function isEndedStatus(status: unknown): boolean {
+  const s = String(status ?? "").trim().toLowerCase();
+  return ["beendet", "ended", "completed", "complete", "finished", "done", "abgeschlossen"].includes(s);
+}
+
+function nameFromMember(m: any): string {
+  const display = String(m?.display_name ?? "").trim();
+  if (display) return display;
+  const name = String(m?.name ?? "").trim();
+  if (name) return name;
+  return "";
+}
+
+async function resolveWinnerNameForAutomation(
+  sb: ReturnType<typeof supabaseAdmin>,
+  winnerId: string,
+  displayNameByCard: Map<string, string>
+) {
+  const mapped = String(displayNameByCard.get(winnerId) ?? "").trim();
+  if (mapped) return mapped;
+  try {
+    const { data: member } = await sb
+      .from("gm_unit_members")
+      .select("display_name, name")
+      .eq("marine_card_id", winnerId)
+      .maybeSingle();
+    const direct = nameFromMember(member ?? null);
+    if (direct) return direct;
+  } catch {
+    // ignore
+  }
+  return winnerId;
+}
+
+async function processOperationMvpFinalization(): Promise<void> {
+  const sb = supabaseAdmin();
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  const { data: ops, error } = await sb
+    .from("operations")
+    .select("id, title, end_at, status, mvp_card_id, mvp_announced_at")
+    .is("mvp_announced_at", null)
+    .limit(100);
+
+  if (error || !ops?.length) return;
+
+  for (const op of ops) {
+    const opId = String((op as any)?.id ?? "").trim();
+    if (!opId) continue;
+
+    const endRaw = String((op as any)?.end_at ?? "").trim();
+    const endAt = endRaw ? new Date(endRaw) : null;
+    const hasValidEndAt = !!endAt && !Number.isNaN(endAt.getTime());
+    const endedByTime = !!hasValidEndAt && endAt!.getTime() <= now.getTime();
+    const ended = endedByTime || isEndedStatus((op as any)?.status);
+    if (!ended) continue;
+
+    const oneHourPassed = !!hasValidEndAt && now.getTime() >= endAt!.getTime() + 60 * 60 * 1000;
+
+    const { data: participants } = await sb
+      .from("operation_participants")
+      .select("marine_card_id")
+      .eq("operation_id", opId);
+
+    const participantCardIds = (participants ?? [])
+      .map((p: any) => String(p?.marine_card_id ?? "").trim())
+      .filter(Boolean);
+    if (!participantCardIds.length) continue;
+
+    const { data: members } = await sb
+      .from("gm_unit_members")
+      .select("discord_id, marine_card_id, display_name, name")
+      .in("marine_card_id", participantCardIds);
+
+    const eligibleDiscordIds = new Set<string>();
+    const displayNameByCard = new Map<string, string>();
+    for (const member of members ?? []) {
+      const did = String((member as any)?.discord_id ?? "").trim();
+      const cid = String((member as any)?.marine_card_id ?? "").trim();
+      const name = nameFromMember(member);
+      if (did) eligibleDiscordIds.add(did);
+      if (cid && name) displayNameByCard.set(cid, name);
+    }
+
+    const { data: votes } = await sb
+      .from("operation_mvp_votes")
+      .select("voter_discord_id, mvp_card_id")
+      .eq("operation_id", opId);
+
+    const votedBy = new Set(
+      (votes ?? []).map((v: any) => String(v?.voter_discord_id ?? "").trim()).filter(Boolean)
+    );
+    const allVoted = eligibleDiscordIds.size > 0 && [...eligibleDiscordIds].every((id) => votedBy.has(id));
+
+    if (!allVoted && !oneHourPassed) continue;
+
+    const counts = new Map<string, number>();
+    for (const vote of votes ?? []) {
+      const cid = String((vote as any)?.mvp_card_id ?? "").trim();
+      if (!cid) continue;
+      counts.set(cid, (counts.get(cid) ?? 0) + 1);
+    }
+
+    const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+    const title = String((op as any)?.title ?? "Einsatz");
+
+    if (!sorted.length) {
+      await sb.from("operations").update({ mvp_card_id: null, mvp_announced_at: nowIso }).eq("id", opId).is("mvp_announced_at", null);
+      await sendDiscordNoMvpEmbed({ operationTitle: title, operationId: opId, timestamp: nowIso });
+      continue;
+    }
+
+    const [winnerId, winnerVotes] = sorted[0];
+    const secondVotes = sorted[1]?.[1] ?? 0;
+
+    if (winnerVotes === secondVotes) {
+      await sb.from("operations").update({ mvp_card_id: null, mvp_announced_at: nowIso }).eq("id", opId).is("mvp_announced_at", null);
+      await sendDiscordNoMvpEmbed({ operationTitle: title, operationId: opId, timestamp: nowIso });
+      continue;
+    }
+
+    const winnerName = await resolveWinnerNameForAutomation(sb, winnerId, displayNameByCard);
+    await sb.from("operations").update({ mvp_card_id: winnerId, mvp_announced_at: nowIso }).eq("id", opId).is("mvp_announced_at", null);
+    await sendDiscordMvpEmbed({
+      operationTitle: title,
+      operationId: opId,
+      mvpName: winnerName,
+      votes: winnerVotes,
+      totalVotes: Math.max(eligibleDiscordIds.size, votedBy.size),
+      timestamp: nowIso,
+    });
+  }
 }

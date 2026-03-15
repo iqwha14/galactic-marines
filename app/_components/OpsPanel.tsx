@@ -19,12 +19,11 @@ type Operation = {
   created_by_discord_id: string;
   created_at: string;
 };
-type Participant = { operation_id: string; marine_card_id: string; effective_marine_card_id?: string | null; display_name?: string | null; role: string | null; is_lead: boolean };
+type Participant = { operation_id: string; marine_card_id: string; role: string | null; is_lead: boolean };
 type Report = {
   id: string;
   operation_id: string;
   author_discord_id: string;
-  author_name?: string | null;
   title: string;
   content_md: string;
   created_at: string;
@@ -74,11 +73,6 @@ function parseJsonSafe(text: string) {
 function fmtDT(iso: string) {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("de-DE");
-}
-
-function isEndedStatus(value: unknown) {
-  const s = String(value ?? "").trim().toLowerCase();
-  return s === "beendet" || s === "ended" || s === "complete" || s === "completed" || s === "done" || s === "finished";
 }
 
 function toRfc3339(input: string) {
@@ -150,7 +144,6 @@ export default function OpsPanel() {
   const [ops, setOps] = useState<Operation[]>([]);
   const [selected, setSelected] = useState<Operation | null>(null);
   const [detail, setDetail] = useState<{
-    operation: Operation | null;
     participants: Participant[];
     reports: Report[];
     ratings: any[];
@@ -161,6 +154,11 @@ export default function OpsPanel() {
 
   const [myMemberCardId, setMyMemberCardId] = useState<string>("");
   const [myMemberName, setMyMemberName] = useState<string>("");
+
+  const isEndedStatus = (status: unknown) => {
+    const s = String(status ?? "").trim().toLowerCase();
+    return ["beendet", "ended", "completed", "complete", "finished", "done", "abgeschlossen"].includes(s);
+  };
 
   const [err, setErr] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -229,9 +227,7 @@ export default function OpsPanel() {
     const res = await fetch(`/api/ops/${id}`, { cache: "no-store" });
     const j = await res.json();
     if (!res.ok) throw new Error(j?.error || "Detail load failed");
-    if (j?.operation?.id) setSelected((prev) => (prev?.id === j.operation.id ? j.operation : prev));
     setDetail({
-      operation: j.operation ?? null,
       participants: j.participants ?? [],
       reports: j.reports ?? [],
       ratings: j.ratings ?? [],
@@ -260,7 +256,7 @@ export default function OpsPanel() {
     if (!res.ok) throw new Error(j?.error || j?.details || "Unit member load failed");
     const member = j?.member;
     setMyMemberCardId(String(member?.marine_card_id ?? ""));
-    setMyMemberName(String(member?.display_name ?? ""));
+    setMyMemberName(String(member?.display_name ?? member?.name ?? ""));
   }
 
   useEffect(() => {
@@ -293,27 +289,6 @@ export default function OpsPanel() {
   }, [activeTab, isAdmin, isFE]);
 
   const rosterById = useMemo(() => new Map(roster.map((m) => [m.id, m])), [roster]);
-
-  const participantLabel = (p: Participant | null | undefined) => {
-    const effectiveId = String(p?.effective_marine_card_id ?? p?.marine_card_id ?? "").trim();
-    const rosterMember = rosterById.get(effectiveId) ?? rosterById.get(String(p?.marine_card_id ?? "").trim());
-    if (rosterMember) return `${rosterMember.rank} • ${rosterMember.name}`;
-    const mappedName = String(p?.display_name ?? "").trim();
-    if (mappedName) return mappedName;
-    return effectiveId || String(p?.marine_card_id ?? "").trim() || "Unbekannt";
-  };
-
-  const participantByAnyId = useMemo(() => {
-    const map = new Map<string, Participant>();
-    for (const p of detail?.participants ?? []) {
-      const rawId = String(p?.marine_card_id ?? "").trim();
-      const effectiveId = String(p?.effective_marine_card_id ?? rawId).trim();
-      if (rawId) map.set(rawId, p);
-      if (effectiveId) map.set(effectiveId, p);
-    }
-    return map;
-  }, [detail?.participants]);
-
 
   useEffect(() => {
     if (mvpPick) return;
@@ -359,17 +334,18 @@ export default function OpsPanel() {
   }, [detail?.killlogs]);
 
   const isOpOver = useMemo(() => {
-    const op = detail?.operation ?? selected;
-    if (!op?.end_at) return false;
-    const d = new Date(op.end_at);
+    if (!selected) return false;
+    if (isEndedStatus((selected as any)?.status)) return true;
+    if (!selected.end_at) return false;
+    const d = new Date(selected.end_at);
     if (Number.isNaN(d.getTime())) return false;
     return Date.now() >= d.getTime();
-  }, [detail?.operation, selected]);
+  }, [selected]);
 
   const viewerIsParticipant = useMemo(() => {
     const card = String(myMemberCardId ?? "").trim();
     if (!card) return false;
-    return (detail?.participants ?? []).some((p) => String(p.effective_marine_card_id ?? p.marine_card_id) === card || String(p.marine_card_id) === card);
+    return (detail?.participants ?? []).some((p) => p.marine_card_id === card);
   }, [detail?.participants, myMemberCardId]);
 
   // If the creator created the op and was already added by FE as lead/participant,
@@ -633,14 +609,10 @@ export default function OpsPanel() {
     setErr(null);
     setBusy(true);
     try {
-      const payload: any = { status: nextStatus };
-      if (isEndedStatus(nextStatus) && !selected.end_at) {
-        payload.end_at = new Date().toISOString();
-      }
       const res = await fetch(`/api/ops/${selected.id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ status: nextStatus }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || j?.details || "Status update failed");
@@ -1281,7 +1253,7 @@ export default function OpsPanel() {
                         return (
                           <div key={p.marine_card_id} className="rounded-xl border border-hud-line/60 bg-black/10 p-3">
                             <div className="flex items-center justify-between gap-2">
-                              <div className="font-medium">{participantLabel(p)}</div>
+                              <div className="font-medium">{m ? `${m.rank} • ${m.name}` : p.marine_card_id}</div>
                               <div className="text-xs text-hud-muted">{p.is_lead ? "Einsatzleitung" : "Teilnehmer"}</div>
                             </div>
                             <div className="mt-1 text-xs text-hud-muted">{m?.unitGroup ?? "—"}</div>
@@ -1331,7 +1303,7 @@ export default function OpsPanel() {
                       <div className="text-xs tracking-[0.22em] uppercase text-hud-muted">MVP-Wahl</div>
                       <div className="mt-2 text-sm text-hud-muted">
                         {isOpOver
-                          ? "Nach Einsatzende wählt jeder Teilnehmer den MVP. Sobald alle abgestimmt haben, wird der MVP automatisch im Discord announced."
+                          ? "Nach Einsatzende wählt jeder Teilnehmer den MVP. Sobald alle abgestimmt haben oder 1 Stunde nach Einsatzende, wird automatisch ausgewertet."
                           : "Die MVP-Wahl wird nach Einsatzende freigeschaltet."}
                       </div>
                     </div>
@@ -1366,16 +1338,14 @@ export default function OpsPanel() {
                       disabled={!discordId || !viewerIsParticipant || !isOpOver || mvpBusy || !!detail?.mvp?.announced_at}
                     >
                       {(detail?.participants ?? [])
-                        .filter((p) => {
-                          const rawId = String(p?.marine_card_id ?? "").trim();
-                          const effectiveId = String(p?.effective_marine_card_id ?? rawId).trim();
-                          return !!rawId && rawId !== myMemberCardId && effectiveId !== myMemberCardId;
-                        })
-                        .map((p) => {
-                          const rawId = String(p?.marine_card_id ?? "").trim();
+                        .map((p) => p.marine_card_id)
+                        .filter((cid) => cid && cid !== myMemberCardId)
+                        .map((cid) => {
+                          const m = rosterById.get(cid);
+                          const label = m ? `${m.rank} • ${m.name}` : (detail?.mvp?.counts?.find((x: any) => String(x?.marine_card_id ?? "") === cid)?.marine_name ?? cid);
                           return (
-                            <option key={rawId} value={rawId}>
-                              {participantLabel(p)}
+                            <option key={cid} value={cid}>
+                              {label}
                             </option>
                           );
                         })}
@@ -1394,7 +1364,7 @@ export default function OpsPanel() {
                   {!discordId ? <div className="mt-2 text-xs text-hud-muted">Login nötig.</div> : null}
                   {discordId && !viewerIsParticipant ? <div className="mt-2 text-xs text-hud-muted">Nur Teilnehmer dürfen abstimmen.</div> : null}
                   {discordId && viewerIsParticipant && !isOpOver ? (
-                    <div className="mt-2 text-xs text-hud-muted">Wahl ist nach Einsatzende verfügbar (Status auf „Beendet“ setzen oder end_at eintragen).</div>
+                    <div className="mt-2 text-xs text-hud-muted">Wahl ist nach Einsatzende verfügbar (Status Beendet oder end_at setzen).</div>
                   ) : null}
 
                   {detail?.mvp?.counts?.length ? (
@@ -1403,9 +1373,8 @@ export default function OpsPanel() {
                       <div className="mt-2 grid gap-2 md:grid-cols-2">
                         {(detail.mvp.counts as any[]).slice(0, 8).map((c: any) => {
                           const cid = String(c?.marine_card_id ?? "");
-                          const p = participantByAnyId.get(cid);
                           const m = rosterById.get(cid);
-                          const label = m ? `${m.rank} • ${m.name}` : String(c?.display_name ?? (p ? participantLabel(p) : cid));
+                          const label = m ? `${m.rank} • ${m.name}` : (detail?.mvp?.counts?.find((x: any) => String(x?.marine_card_id ?? "") === cid)?.marine_name ?? cid);
                           return (
                             <div key={cid} className="rounded-xl border border-hud-line/60 bg-black/10 p-3">
                               <div className="flex items-center justify-between gap-2">
@@ -1647,9 +1616,7 @@ export default function OpsPanel() {
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="font-medium">{r.title}</div>
-                            <div className="text-xs text-hud-muted">
-                              Verfasst von {String(r.author_name ?? r.author_discord_id ?? "Unbekannt")} · {fmtDT(r.created_at)}
-                            </div>
+                            <div className="text-xs text-hud-muted">{fmtDT(r.created_at)}{(r as any)?.author_name ? ` • Verfasst von ${(r as any).author_name}` : ""}</div>
                           </div>
                         </div>
                         <div className="mt-2 whitespace-pre-wrap text-sm text-hud-text/90">{r.content_md}</div>
